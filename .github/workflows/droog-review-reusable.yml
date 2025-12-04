@@ -1,0 +1,100 @@
+name: Droog AI Review (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: string
+      gemini_api_key:
+        description: 'Gemini API key'
+        required: true
+        type: string
+      github_token:
+        description: 'GitHub token'
+        required: true
+        type: string
+      post_comments:
+        description: 'Post comments to PR'
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      GEMINI_API_KEY:
+        required: true
+      GITHUB_TOKEN:
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+        continue-on-error: true
+      
+      - name: Install dependencies
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          else
+            npm install
+          fi
+      
+      - name: Build Droog AI
+        run: npm run build
+      
+      - name: Load index if exists
+        id: load-index
+        run: |
+          if [ -f ".droog-embeddings.json" ]; then
+            echo "index_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "index_exists=false" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+      
+      - name: Run Droog AI Review
+        id: review
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ inputs.pr_number }}"
+          POST_FLAG=""
+          if [ "${{ inputs.post_comments }}" = "true" ]; then
+            POST_FLAG="--post"
+          fi
+          
+          # Run review with enterprise features enabled
+          node dist/index.js review --repo "${{ github.repository }}" --pr "${PR_NUMBER}" --enterprise ${POST_FLAG} || true
+          
+          # Ensure report.json exists (even if review failed)
+          if [ ! -f "report.json" ]; then
+            echo "⚠️  report.json not found, creating minimal error report"
+            echo '{"success":false,"error":"Review failed to generate report","totalIssues":0,"issuesBySeverity":{"high":0,"medium":0,"low":0},"comments":[],"timestamp":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}' > report.json
+          fi
+      
+      - name: Upload review report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-report
+          path: report.json
+          retention-days: 7
+          if-no-files-found: warn
+
