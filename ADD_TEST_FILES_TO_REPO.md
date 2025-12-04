@@ -1,6 +1,6 @@
 # How to Add Test Files to AI-reviewer Repository
 
-Since this directory is not a git repository, you need to add the test files to the `abhijeet1771/AI-reviewer` repository.
+Since this directory is not a git repository, you need to add the test files to your test repository.
 
 ## Option 1: Clone the Repository and Add Files
 
@@ -11,6 +11,7 @@ cd D:\
 # Clone the repository (if not already cloned)
 git clone https://github.com/abhijeet1771/AI-reviewer.git
 cd AI-reviewer
+# Note: AI-reviewer is the test repository, not DroogAI
 
 # Copy test files from DROOG AI
 Copy-Item "D:\DROOG AI\test-files" -Destination . -Recurse

@@ -27,7 +27,7 @@ jobs:
       - name: Run DroogAI Review
         uses: actions/checkout@v4
         with:
-          repository: abhijeet1771/AI-reviewer  # or your DroogAI repo
+          repository: abhijeet1771/DROOGAI  # or your DroogAI repo
           path: .droog-ai
       
       - name: Setup Node.js
@@ -74,7 +74,7 @@ Fix the current installation step:
     echo "📦 Installing DroogAI from GitHub..."
     
     # Clone DroogAI repository
-    if git clone https://github.com/abhijeet1771/AI-reviewer.git /tmp/droog-ai 2>/dev/null; then
+    if git clone https://github.com/abhijeet1771/DROOGAI.git /tmp/droog-ai 2>/dev/null; then
       echo "✅ DroogAI repository cloned successfully"
       cd /tmp/droog-ai
       
@@ -127,7 +127,7 @@ on:
 **In your test repo**:
 ```yaml
 - name: Call DroogAI Review
-  uses: abhijeet1771/AI-reviewer/.github/workflows/droog-review-reusable.yml@main
+  uses: abhijeet1771/DROOGAI/.github/workflows/droog-review-reusable.yml@main
   with:
     pr_number: "1"
   secrets:
