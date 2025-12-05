@@ -1183,6 +1183,34 @@ export class EnterpriseReviewer {
       }
     }
     
+    // Code Organization (Sprint 2.1)
+    if (report.codeOrganization && report.codeOrganization.issues.length > 0) {
+      summary += `\n## 📁 Code Organization\n\n`;
+      summary += `${report.codeOrganization.summary}\n\n`;
+      
+      const wrongLocation = report.codeOrganization.issues.filter(i => i.type === 'wrong_location');
+      const separation = report.codeOrganization.issues.filter(i => i.type === 'missing_separation');
+      
+      if (wrongLocation.length > 0) {
+        summary += `### Files in Wrong Location\n\n`;
+        wrongLocation.slice(0, 5).forEach((issue: any, index: number) => {
+          summary += `${index + 1}. **\`${issue.file}\`** - ${issue.element}\n`;
+          summary += `   - **Current:** \`${issue.currentLocation}\`\n`;
+          summary += `   - **Should be:** \`${issue.suggestedLocation}\`\n`;
+          summary += `   - **Reason:** ${issue.reason}\n\n`;
+        });
+      }
+      
+      if (separation.length > 0) {
+        summary += `### Separation of Concerns\n\n`;
+        separation.slice(0, 3).forEach((issue: any, index: number) => {
+          summary += `${index + 1}. **\`${issue.file}\`** - ${issue.element}\n`;
+          summary += `   - **Issue:** ${issue.message}\n`;
+          summary += `   - **Fix:** ${issue.suggestion}\n\n`;
+        });
+      }
+    }
+    
     // Reviewer Suggestions (keep this - helpful for PR)
     if (report.reviewerSuggestions && report.reviewerSuggestions.length > 0) {
       summary += `## 👥 Suggested Reviewers\n\n`;
