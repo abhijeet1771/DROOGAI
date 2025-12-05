@@ -25,6 +25,8 @@ import { TechnicalDebtAnalyzer, TechnicalDebtReport } from '../analysis/technica
 import { MigrationSafetyAnalyzer, MigrationSafetyReport } from '../analysis/migration-safety.js';
 import { OrganizationAnalyzer, OrganizationReport } from '../analysis/organization.js';
 import { ContextDetector, ContextReport } from '../intelligence/context-detector.js';
+import { BusinessImpactMapper, BusinessImpactReport } from '../analysis/business-impact.js';
+import { RiskPrioritizer, RiskPrioritizationReport } from '../analysis/risk-prioritizer.js';
 
 export interface EnterpriseReviewReport {
   prNumber: number;
@@ -126,6 +128,8 @@ export interface EnterpriseReviewReport {
     impactedFeatures: any[];
     callSites: any[];
     breakagePredictions: any[];
+    cascadeFailures?: any[]; // Sprint 3.1
+    dependencyChains?: any[]; // Sprint 3.1
     summary: string;
   };
   testImpact?: {
@@ -154,6 +158,8 @@ export interface EnterpriseReviewReport {
   };
   codeOrganization?: OrganizationReport; // Sprint 2.1: Code organization suggestions
   contextIntelligence?: ContextReport; // Sprint 2.2: Context-aware intelligence
+  businessImpact?: BusinessImpactReport; // Sprint 3.2: Business impact mapping
+  riskPrioritization?: RiskPrioritizationReport; // Sprint 3.3: Risk prioritization
   prFlowValidation?: {
     issues: any[];
     unusedLocators: any[];
@@ -1242,6 +1248,64 @@ export class EnterpriseReviewer {
           });
           summary += `\n`;
         }
+      }
+    }
+
+    // Business Impact (Sprint 3.2)
+    if (report.businessImpact && report.businessImpact.impacts.length > 0) {
+      summary += `\n## 💼 Business Impact\n\n`;
+      summary += `${report.businessImpact.summary}\n\n`;
+      
+      const criticalImpacts = report.businessImpact.impacts.filter(i => 
+        i.businessCriticality === 'critical' || i.businessCriticality === 'high'
+      );
+      
+      if (criticalImpacts.length > 0) {
+        summary += `### Critical User-Facing Impacts\n\n`;
+        criticalImpacts.slice(0, 5).forEach((impact: any, index: number) => {
+          summary += `${index + 1}. **${impact.userFacingImpact}**\n`;
+          summary += `   - **Affected Flows:** ${impact.affectedUserFlows.join(', ')}\n`;
+          summary += `   - **Criticality:** ${impact.businessCriticality.toUpperCase()}\n`;
+          if (impact.revenueImpact) {
+            summary += `   - **Revenue Impact:** ${impact.revenueImpact}\n`;
+          }
+          summary += `   - **Description:** ${impact.description}\n\n`;
+        });
+      }
+
+      if (report.businessImpact.criticalFlows.length > 0) {
+        summary += `### Critical User Flows at Risk\n\n`;
+        report.businessImpact.criticalFlows.slice(0, 5).forEach((flow: string, index: number) => {
+          summary += `${index + 1}. ${flow}\n`;
+        });
+        summary += `\n`;
+      }
+    }
+
+    // Risk Prioritization (Sprint 3.3)
+    if (report.riskPrioritization && report.riskPrioritization.risks.length > 0) {
+      summary += `\n## ⚠️ Risk Prioritization\n\n`;
+      summary += `${report.riskPrioritization.summary}\n\n`;
+      
+      if (report.riskPrioritization.criticalRisks.length > 0) {
+        summary += `### 🔴 Critical Risks (Must Fix Before Merge)\n\n`;
+        report.riskPrioritization.criticalRisks.slice(0, 5).forEach((risk: any, index: number) => {
+          summary += `${index + 1}. **\`${risk.file}${risk.line ? ':' + risk.line : ''}\`** - ${risk.issue}\n`;
+          summary += `   - **Risk Score:** ${risk.riskScore}/100\n`;
+          summary += `   - **Reasoning:** ${risk.reasoning}\n`;
+          if (risk.factors.productionTraffic) {
+            summary += `   - **Production Traffic:** ${risk.factors.productionTraffic}\n`;
+          }
+          summary += `\n`;
+        });
+      }
+
+      if (report.riskPrioritization.highRisks.length > 0) {
+        summary += `### 🟠 High Priority Risks\n\n`;
+        report.riskPrioritization.highRisks.slice(0, 3).forEach((risk: any, index: number) => {
+          summary += `${index + 1}. **\`${risk.file}\`** - ${risk.issue} (Risk Score: ${risk.riskScore}/100)\n`;
+        });
+        summary += `\n`;
       }
     }
     
