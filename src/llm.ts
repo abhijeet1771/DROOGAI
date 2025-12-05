@@ -390,11 +390,25 @@ Analyze this diff and return JSON array of issues.`;
 
         const comments = JSON.parse(jsonText) as ReviewComment[];
         
-        // Ensure file paths are set correctly
-        const mappedComments = comments.map(comment => ({
-          ...comment,
-          file: comment.file || chunk[0]?.file || 'unknown',
-        }));
+        // Ensure file paths are set correctly and calculate confidence scores
+        const mappedComments = comments.map(comment => {
+          // Normalize severity for confidence calculation
+          const sev = (comment.severity || '').toLowerCase();
+          const normalizedSeverity = sev === 'critical' ? 'high' : 
+                                   sev === 'major' ? 'medium' :
+                                   sev === 'minor' || sev === 'nitpick' ? 'low' :
+                                   sev;
+          
+          // Calculate confidence score
+          const confidence = this.calculateConfidence(comment, normalizedSeverity);
+          
+          return {
+            ...comment,
+            file: comment.file || chunk[0]?.file || 'unknown',
+            severity: normalizedSeverity as 'high' | 'medium' | 'low',
+            confidence,
+          };
+        });
         
         allComments.push(...mappedComments);
         console.log(`  ✓ Batch ${chunkIndex + 1} complete: ${mappedComments.length} issues found`);
