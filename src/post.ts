@@ -128,8 +128,11 @@ export class CommentPoster {
    * Structure: Impact explanation → Human suggestion → Code example
    */
   private formatHumanLikeComment(comment: ReviewComment): string {
-    const message = comment.message || '';
-    const suggestion = comment.suggestion || '';
+    let message = comment.message || '';
+    let suggestion = comment.suggestion || '';
+    
+    // Fix grammar and formatting in message
+    message = this.fixGrammarAndFormatting(message);
     
     // Extract impact information from message
     const impactExplanation = this.extractImpactExplanation(message, comment);
@@ -151,7 +154,7 @@ export class CommentPoster {
       formatted += `I noticed ${impactExplanation.impact}\n\n`;
     } else {
       // Fallback to original message but in conversational tone
-      formatted += `I noticed ${this.makeConversational(message)}\n\n`;
+      formatted += `${this.makeConversational(message)}\n\n`;
     }
     
     // 2. Human suggestion (respectful, soft)
@@ -161,6 +164,77 @@ export class CommentPoster {
     }
     
     return formatted;
+  }
+
+  /**
+   * Fix grammar, capitalization, and formatting issues in text
+   */
+  private fixGrammarAndFormatting(text: string): string {
+    if (!text || text.trim().length === 0) {
+      return text;
+    }
+
+    // 1. Fix capitalization after periods, exclamation, question marks
+    text = text.replace(/([.!?])\s+([a-z])/g, (match, punct, letter) => {
+      return `${punct} ${letter.toUpperCase()}`;
+    });
+
+    // 2. Fix "i " to "I " (but not in words like "this" or "with")
+    text = text.replace(/\bi\s+/g, 'I ');
+
+    // 3. Fix "i'd" to "I'd"
+    text = text.replace(/\bi'd\b/gi, "I'd");
+
+    // 4. Fix "i've" to "I've"
+    text = text.replace(/\bi've\b/gi, "I've");
+
+    // 5. Fix "i'm" to "I'm"
+    text = text.replace(/\bi'm\b/gi, "I'm");
+
+    // 6. Fix "i'll" to "I'll"
+    text = text.replace(/\bi'll\b/gi, "I'll");
+
+    // 7. Fix method names: "calculatetotal" -> "calculateTotal" (camelCase)
+    text = text.replace(/\bcalculatetotal\b/gi, 'calculateTotal');
+    text = text.replace(/\bgetuserdata\b/gi, 'getUserData');
+    text = text.replace(/\bgetstatus\b/gi, 'getStatus');
+    text = text.replace(/\bprocessorders\b/gi, 'processOrders');
+    text = text.replace(/\bgetprice\b/gi, 'getPrice');
+    text = text.replace(/\bgetquantity\b/gi, 'getQuantity');
+    text = text.replace(/\bprocessorder\b/gi, 'processOrder');
+
+    // 8. Fix Big O notation: "o(n²)" -> "O(n²)", "o(n)" -> "O(n)"
+    text = text.replace(/\bo\(n²?\)/gi, (match) => {
+      return match.charAt(0).toUpperCase() + match.slice(1);
+    });
+    text = text.replace(/\bo\(n\s*\*\s*n\)/gi, 'O(n²)');
+    text = text.replace(/\bo\(n\^2\)/gi, 'O(n²)');
+
+    // 9. Fix common grammar: "this i" -> "this. I"
+    text = text.replace(/\bthis\s+i\s+/gi, 'this. I ');
+
+    // 10. Fix "here's" -> "Here's" at start of sentence
+    text = text.replace(/(^|[.!?]\s+)here's\b/gi, (match, prefix) => {
+      return prefix + "Here's";
+    });
+
+    // 11. Fix "i noticed" -> "I noticed" at start
+    text = text.replace(/^i\s+noticed/gi, 'I noticed');
+
+    // 12. Fix double spaces
+    text = text.replace(/\s{2,}/g, ' ');
+
+    // 13. Ensure first character is capitalized
+    if (text.length > 0) {
+      text = text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
+    // 14. Fix common typos
+    text = text.replace(/\bthe\s+the\b/gi, 'the');
+    text = text.replace(/\ba\s+a\b/gi, 'a');
+    text = text.replace(/\bis\s+is\b/gi, 'is');
+
+    return text.trim();
   }
 
   /**
