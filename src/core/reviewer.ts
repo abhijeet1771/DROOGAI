@@ -141,6 +141,16 @@ export interface EnterpriseReviewReport {
     estimatedImpact: string;
   };
   reviewerSuggestions?: any[];
+  locatorSuggestions?: {
+    suggestions: any[];
+    framework: string;
+    totalIssues: number;
+  };
+  gherkinSuggestions?: {
+    suggestions: any[];
+    totalIssues: number;
+    readabilityScore: number;
+  };
   summary?: string;
   recommendations?: string;
   averageConfidence?: number;
@@ -618,6 +628,17 @@ export class EnterpriseReviewer {
         estimatedImpact: perfAnalysis.estimatedImpact,
       },
       reviewerSuggestions: reviewerSuggestions,
+      locatorSuggestions: {
+        suggestions: locatorSuggestions,
+        framework: locatorSuggestions.length > 0 ? locatorSuggestions[0].framework : 'unknown',
+        totalIssues: locatorSuggestions.length,
+      },
+      gherkinSuggestions: {
+        suggestions: gherkinSuggestions,
+        totalIssues: gherkinSuggestions.length,
+        readabilityScore: gherkinSuggestions.length > 0 ? 
+          gherkinAnalyzer.analyzeGherkin(Array.from(prFileContents.values()).join('\n'), 'combined').readabilityScore : 100,
+      },
     };
     
     // All analysis already done in Phase 0, now just run architecture rules
@@ -896,6 +917,35 @@ export class EnterpriseReviewer {
     }
     summary += `5. **Run full test suite** before merging\n`;
     summary += `6. **Consider creating a migration guide** if breaking changes are intentional\n\n`;
+    
+    // Locator Suggestions
+    if (report.locatorSuggestions && report.locatorSuggestions.suggestions.length > 0) {
+      summary += `\n## 🎯 Test Automation: Locator Improvements\n\n`;
+      summary += `**Framework:** ${report.locatorSuggestions.framework}\n`;
+      summary += `**${report.locatorSuggestions.totalIssues} locator improvement(s) suggested**\n\n`;
+      
+      report.locatorSuggestions.suggestions.slice(0, 5).forEach((suggestion: any, index: number) => {
+        summary += `${index + 1}. **\`${suggestion.file}:${suggestion.line}\`** (${suggestion.priority.toUpperCase()} priority)\n`;
+        summary += `   - **Current:** \`${suggestion.currentLocator}\`\n`;
+        summary += `   - **Suggested:** \`${suggestion.suggestedLocator}\`\n`;
+        summary += `   - **Reason:** ${suggestion.reason}\n`;
+        summary += `   - **Example:**\n\`\`\`\n${suggestion.example}\n\`\`\`\n\n`;
+      });
+    }
+
+    // Gherkin Improvements
+    if (report.gherkinSuggestions && report.gherkinSuggestions.suggestions.length > 0) {
+      summary += `\n## 📝 Test Automation: Gherkin/Feature File Improvements\n\n`;
+      summary += `**Readability Score:** ${report.gherkinSuggestions.readabilityScore}/100\n`;
+      summary += `**${report.gherkinSuggestions.totalIssues} improvement(s) suggested**\n\n`;
+      
+      report.gherkinSuggestions.suggestions.slice(0, 5).forEach((suggestion: any, index: number) => {
+        summary += `${index + 1}. **\`${suggestion.file}:${suggestion.line}\`** (${suggestion.type}, ${suggestion.priority.toUpperCase()} priority)\n`;
+        summary += `   - **Current:** \`${suggestion.currentText}\`\n`;
+        summary += `   - **Suggested:** \`${suggestion.suggestedText}\`\n`;
+        summary += `   - **Reason:** ${suggestion.reason}\n\n`;
+      });
+    }
     
     // Reviewer Suggestions (keep this)
     if (report.reviewerSuggestions && report.reviewerSuggestions.length > 0) {
