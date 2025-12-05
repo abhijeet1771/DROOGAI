@@ -88,11 +88,16 @@ export class CommentPoster {
       });
       if (remainingComments.length > 0) {
         const summary = this.formatSummaryComment(file, remainingComments);
-        try {
-          await this.github.postComment(this.owner, this.repo, this.prNumber, summary);
-          console.log(`  ✓ Posted summary for ${file}`);
-        } catch (error) {
-          console.error(`  ✗ Failed to post summary for ${file}`, error);
+        // Only post summary if it has content (not empty)
+        if (summary.trim().length > 0 && summary !== `## Review Summary for \`${file}\`\n\n`) {
+          try {
+            await this.github.postComment(this.owner, this.repo, this.prNumber, summary);
+            console.log(`  ✓ Posted summary for ${file}`);
+          } catch (error) {
+            console.error(`  ✗ Failed to post summary for ${file}`, error);
+          }
+        } else {
+          console.log(`  ⚠️  Skipping empty summary for ${file} (all comments were posted as inline)`);
         }
       }
     }
@@ -113,23 +118,35 @@ export class CommentPoster {
   private formatSummaryComment(file: string, comments: ReviewComment[]): string {
     let summary = `## Review Summary for \`${file}\`\n\n`;
     
+    // Handle both normalized (medium/low) and original (major/minor) severity values
     const bySeverity = {
-      medium: comments.filter((c) => c.severity === 'medium'),
-      low: comments.filter((c) => c.severity === 'low'),
+      medium: comments.filter((c) => {
+        const sev = (c.severity || '').toLowerCase();
+        return sev === 'medium' || sev === 'major';
+      }),
+      low: comments.filter((c) => {
+        const sev = (c.severity || '').toLowerCase();
+        return sev === 'low' || sev === 'minor' || sev === 'nitpick';
+      }),
     };
 
     if (bySeverity.medium.length > 0) {
       summary += '### Medium Severity\n\n';
       bySeverity.medium.forEach((c) => {
-        summary += `- **Line ${c.line}**: ${c.message}\n  - *Suggestion*: ${c.suggestion}\n\n`;
+        summary += `- **Line ${c.line}**: ${c.message}\n  - *Suggestion*: \`\`\`java\n${c.suggestion}\n\`\`\`\n\n`;
       });
     }
 
     if (bySeverity.low.length > 0) {
       summary += '### Low Severity\n\n';
       bySeverity.low.forEach((c) => {
-        summary += `- **Line ${c.line}**: ${c.message}\n  - *Suggestion*: ${c.suggestion}\n\n`;
+        summary += `- **Line ${c.line}**: ${c.message}\n  - *Suggestion*: \`\`\`java\n${c.suggestion}\n\`\`\`\n\n`;
       });
+    }
+
+    // If no comments matched, return empty string (shouldn't happen, but safety check)
+    if (bySeverity.medium.length === 0 && bySeverity.low.length === 0) {
+      return '';
     }
 
     return summary;
