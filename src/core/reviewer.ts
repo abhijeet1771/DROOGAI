@@ -701,6 +701,63 @@ export class EnterpriseReviewer {
         readabilityScore: gherkinAnalyzer.analyzeGherkin(Array.from(prFileContents.values()).join('\n'), 'combined').readabilityScore,
       } : undefined,
     };
+
+    // Phase 0.26: Pattern Memory Analysis (Sprint 4.1)
+    console.log('  📋 Phase 0.26: Pattern Memory Analysis...');
+    let patternMemoryReport: PatternMemoryReport | null = null;
+    try {
+      const detectedIssues = enterpriseReport.comments.map(c => ({
+        file: c.file,
+        line: c.line,
+        message: c.message || '',
+        type: (c as any).type || 'general',
+      }));
+      patternMemoryReport = this.patternMemory.analyzePatterns(
+        prFileContents,
+        prFileNames,
+        detectedIssues
+      );
+      if (patternMemoryReport.similarBugs.length > 0 || patternMemoryReport.similarReviews.length > 0) {
+        console.log(`  ✓ Found ${patternMemoryReport.similarBugs.length} similar bug(s), ${patternMemoryReport.similarReviews.length} similar review(s)`);
+      } else {
+        console.log(`  ✓ No similar patterns found in history`);
+      }
+    } catch (error: any) {
+      console.log(`  ⚠️ Pattern memory analysis failed (non-critical): ${error.message}`);
+    }
+
+    // Phase 0.27: Codebase Knowledge Engine (Sprint 4.2)
+    console.log('  📋 Phase 0.27: Codebase Knowledge Analysis...');
+    let codebaseKnowledgeReport: CodebaseKnowledgeReport | null = null;
+    try {
+      if (useIndex && mainBranchSymbols.length > 0) {
+        if (!this.codebaseKnowledge) {
+          this.codebaseKnowledge = new CodebaseKnowledgeEngine(this.indexer);
+        }
+        codebaseKnowledgeReport = this.codebaseKnowledge.analyzeCodebaseKnowledge(
+          prSymbols,
+          prFileContents,
+          mainBranchSymbols
+        );
+        if (codebaseKnowledgeReport.suggestions.length > 0) {
+          console.log(`  ✓ Found ${codebaseKnowledgeReport.suggestions.length} code reuse opportunity(ies)`);
+        } else {
+          console.log(`  ✓ No code reuse opportunities found`);
+        }
+      } else {
+        console.log(`  ⚠️  Index not available - skipping codebase knowledge analysis`);
+      }
+    } catch (error: any) {
+      console.log(`  ⚠️ Codebase knowledge analysis failed (non-critical): ${error.message}`);
+    }
+
+    // Add pattern memory and codebase knowledge reports
+    if (patternMemoryReport) {
+      enterpriseReport.patternMemory = patternMemoryReport;
+    }
+    if (codebaseKnowledgeReport) {
+      enterpriseReport.codebaseKnowledge = codebaseKnowledgeReport;
+    }
     
     // All analysis already done in Phase 0, now just run architecture rules
     // Phase 2: Architecture rules
