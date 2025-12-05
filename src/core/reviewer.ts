@@ -843,8 +843,16 @@ export class EnterpriseReviewer {
           bc.impactedFiles.forEach((file: string) => totalImpactedFiles.add(file));
         }
         if (bc.callSites) {
-          totalCallSites += bc.callSites.length;
-          bc.callSites.forEach((cs: any) => totalImpactedFiles.add(cs.file));
+          // Handle both array and object formats
+          if (Array.isArray(bc.callSites)) {
+            totalCallSites += bc.callSites.length;
+            bc.callSites.forEach((cs: any) => totalImpactedFiles.add(cs.file));
+          } else if (bc.callSites.details && Array.isArray(bc.callSites.details)) {
+            totalCallSites += bc.callSites.count || bc.callSites.details.length;
+            bc.callSites.details.forEach((cs: any) => totalImpactedFiles.add(cs.file));
+          } else if (bc.callSites.count) {
+            totalCallSites += bc.callSites.count;
+          }
         }
       });
       
@@ -958,7 +966,16 @@ export class EnterpriseReviewer {
       const topBreakingChange = report.breakingChanges.details[0];
       // Count total call sites across all breaking changes
       const totalCallSites = report.breakingChanges.details.reduce((sum: number, bc: any) => {
-        return sum + (bc.callSites?.length || 0);
+        if (!bc.callSites) return sum;
+        // Handle both array and object formats
+        if (Array.isArray(bc.callSites)) {
+          return sum + bc.callSites.length;
+        } else if (bc.callSites.count) {
+          return sum + bc.callSites.count;
+        } else if (bc.callSites.details && Array.isArray(bc.callSites.details)) {
+          return sum + bc.callSites.details.length;
+        }
+        return sum;
       }, 0);
       const totalImpactedFiles = new Set<string>();
       report.breakingChanges.details.forEach((bc: any) => {
@@ -966,7 +983,12 @@ export class EnterpriseReviewer {
           bc.impactedFiles.forEach((file: string) => totalImpactedFiles.add(file));
         }
         if (bc.callSites) {
-          bc.callSites.forEach((cs: any) => totalImpactedFiles.add(cs.file));
+          // Handle both array and object formats
+          if (Array.isArray(bc.callSites)) {
+            bc.callSites.forEach((cs: any) => totalImpactedFiles.add(cs.file));
+          } else if (bc.callSites.details && Array.isArray(bc.callSites.details)) {
+            bc.callSites.details.forEach((cs: any) => totalImpactedFiles.add(cs.file));
+          }
         }
       });
       
