@@ -380,15 +380,31 @@ Analyze this diff and return JSON array of issues.`;
         const response = result.response;
         const text = response.text().trim();
 
-        // Parse JSON response
+        // Extract JSON from response (handle markdown code blocks and extra text)
         let jsonText = text;
-        if (jsonText.startsWith('```json')) {
-          jsonText = jsonText.replace(/^```json\n?/i, '').replace(/\n?```$/i, '');
-        } else if (jsonText.startsWith('```')) {
-          jsonText = jsonText.replace(/^```\n?/i, '').replace(/\n?```$/i, '');
+        
+        // Remove markdown code blocks if present
+        if (jsonText.startsWith('```')) {
+          jsonText = jsonText.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '');
+        }
+        
+        // Find JSON array in the response (handles cases where LLM adds extra text)
+        const jsonMatch = jsonText.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) {
+          console.warn(`⚠️  No JSON array found in batch ${chunkIndex + 1} response, skipping...`);
+          // Fallback to individual reviews
+          for (let i = 0; i < chunk.length; i++) {
+            const file = chunk[i];
+            const comments = await this.reviewDiff(file.file, file.diff);
+            allComments.push(...comments);
+            if (i < chunk.length - 1) {
+              await new Promise((resolve) => setTimeout(resolve, 35000));
+            }
+          }
+          continue;
         }
 
-        const comments = JSON.parse(jsonText) as ReviewComment[];
+        const comments = JSON.parse(jsonMatch[0]) as ReviewComment[];
         
         // Ensure file paths are set correctly and calculate confidence scores
         const mappedComments = comments.map(comment => {
