@@ -212,14 +212,36 @@ async function runEnterpriseReview(owner: string, repo: string, prNumber: number
     
     // Check if index exists and enable it
     const { existsSync } = await import('fs');
-    const indexExists = existsSync('.droog-embeddings.json');
-    const useIndex = indexExists;
+    let indexExists = existsSync('.droog-embeddings.json');
+    let useIndex = indexExists;
+    
+    // Auto-index if index doesn't exist
+    if (!indexExists) {
+      console.log('📦 No index found - auto-indexing base branch...\n');
+      try {
+        const baseBranch = prData.base.ref || 'main';
+        console.log(`🔄 Indexing ${baseBranch} branch for impact analysis...`);
+        
+        const { FullCodebaseIndexer } = await import('./indexer/full-indexer.js');
+        const indexer = new FullCodebaseIndexer(githubToken, geminiKey);
+        
+        const progress = await indexer.indexRepository(owner, repo, baseBranch);
+        console.log(`✓ Indexed ${progress.processedFiles} files, ${progress.indexedSymbols} symbols\n`);
+        
+        // Check again if index was created
+        indexExists = existsSync('.droog-embeddings.json');
+        useIndex = indexExists;
+      } catch (indexError: any) {
+        console.warn(`⚠️  Auto-indexing failed: ${indexError.message}`);
+        console.warn('   Continuing without index - cross-repo features disabled\n');
+        useIndex = false;
+      }
+    }
     
     if (useIndex) {
-      console.log('📦 Index found - enabling cross-repo duplicate detection\n');
+      console.log('📦 Index found - enabling cross-repo duplicate detection and impact analysis\n');
     } else {
-      console.log('⚠️  No index found - cross-repo duplicate detection disabled\n');
-      console.log('   Run "droog index" to enable cross-repo features\n');
+      console.log('⚠️  No index available - cross-repo features disabled\n');
     }
     
     const report = await reviewer.reviewPR(prData, useIndex, geminiKey);
