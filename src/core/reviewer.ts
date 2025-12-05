@@ -785,26 +785,34 @@ export class EnterpriseReviewer {
     }
     summary += `- Low: ${report.issuesBySeverity.low}\n\n`;
     
-    // Add Pre-Merge Impact Analysis section
+    // RISK-FOCUSED SUMMARY: What will break?
+    
+    // 1. Impact Analysis - What will break?
     if (report.impactAnalysis && report.impactAnalysis.impactedFiles.length > 0) {
-      summary += `\n## ⚠️ Pre-Merge Impact Analysis\n\n`;
-      summary += `**This PR will impact ${report.impactAnalysis.impactedFiles.length} file(s) before merge.**\n\n`;
+      summary += `## 🚨 What Will Break?\n\n`;
+      summary += `**This PR will impact ${report.impactAnalysis.impactedFiles.length} file(s) in the codebase.**\n\n`;
       
       if (report.impactAnalysis.impactedFeatures.length > 0) {
-        summary += `### Impacted Features\n\n`;
+        summary += `### Affected Features (Will Break/Fail)\n\n`;
         report.impactAnalysis.impactedFeatures.forEach((feature: any) => {
-          summary += `**${feature.name}** (${feature.riskLevel.toUpperCase()} Risk)\n`;
-          summary += `- ${feature.files.length} file(s) affected\n`;
-          summary += `- ${feature.impactedAreas.length} call site(s) found\n`;
-          summary += `- ${feature.description}\n\n`;
+          summary += `#### ${feature.name} Feature - ${feature.riskLevel.toUpperCase()} RISK\n`;
+          summary += `**Status:** ⚠️ **WILL BREAK**\n\n`;
+          summary += `**Files that will fail:**\n`;
+          feature.files.forEach((file: string) => {
+            summary += `- \`${file}\` - **WILL FAIL**\n`;
+          });
+          summary += `\n`;
+          
+          summary += `**Why it will break:**\n`;
+          summary += `${feature.description}\n\n`;
           
           if (feature.impactedAreas.length > 0) {
-            summary += `**Where it's being called:**\n`;
-            feature.impactedAreas.slice(0, 5).forEach((area: any) => {
-              summary += `  - \`${area.method}()\` in \`${area.file}:${area.line}\`\n`;
+            summary += `**Exact locations where it's being called (will fail here):**\n`;
+            feature.impactedAreas.slice(0, 10).forEach((area: any) => {
+              summary += `- \`${area.file}:${area.line}\` - \`${area.method}()\` calls modified code\n`;
             });
-            if (feature.impactedAreas.length > 5) {
-              summary += `  ... and ${feature.impactedAreas.length - 5} more\n`;
+            if (feature.impactedAreas.length > 10) {
+              summary += `- ... and ${feature.impactedAreas.length - 10} more locations\n`;
             }
             summary += `\n`;
           }
@@ -812,84 +820,111 @@ export class EnterpriseReviewer {
       }
       
       if (report.impactAnalysis.breakagePredictions.length > 0) {
-        summary += `### 🚨 Potential Breakage Predictions\n\n`;
+        summary += `### 🔥 Predicted Breakage Scenarios\n\n`;
         report.impactAnalysis.breakagePredictions.forEach((pred: any) => {
-          summary += `**${pred.scenario}** (${pred.probability.toUpperCase()} Probability)\n`;
-          summary += `- **Impact:** ${pred.impact}\n`;
-          summary += `- **Affected:** ${pred.affectedFiles.length} file(s)\n`;
-          summary += `- **Mitigation:** ${pred.mitigation}\n\n`;
+          summary += `**${pred.scenario}** (${pred.probability.toUpperCase()} chance of breaking)\n`;
+          summary += `- **What will break:** ${pred.impact}\n`;
+          summary += `- **Files that will fail:** ${pred.affectedFiles.join(', ')}\n`;
+          summary += `- **How to prevent:** ${pred.mitigation}\n\n`;
         });
       }
-      
-      summary += `### 📋 Recommendations\n\n`;
-      summary += `1. Review all call sites listed above before merging\n`;
-      summary += `2. Run full test suite to catch any breakage\n`;
-      summary += `3. Update calling code if method signatures have changed\n`;
-      summary += `4. Consider deprecation for public APIs instead of breaking changes\n\n`;
     }
 
-    // Add Test Impact Analysis section
-    if (report.testImpact && (report.testImpact.affectedTests.length > 0 || report.testImpact.failingTests.length > 0)) {
-      summary += `\n## 🧪 Test Impact Analysis\n\n`;
-      summary += `**Affected Tests:** ${report.testImpact.affectedTests.length}\n`;
-      summary += `**Tests Likely to Fail:** ${report.testImpact.failingTests.length}\n`;
-      summary += `**Coverage Change:** ${report.testImpact.coverageChange.toFixed(1)}%\n`;
-      summary += `**New Coverage:** ${report.testImpact.newCoverage.toFixed(1)}%\n\n`;
+    // 2. Test Cases That Will Fail
+    if (report.testImpact && report.testImpact.failingTests.length > 0) {
+      summary += `## 🧪 Test Cases That WILL FAIL\n\n`;
+      summary += `**${report.testImpact.failingTests.length} test case(s) will fail** if this PR is merged.\n\n`;
       
-      if (report.testImpact.failingTests.length > 0) {
-        summary += `### ⚠️ Tests Likely to Fail\n\n`;
-        report.testImpact.failingTests.slice(0, 5).forEach((test: any) => {
-          summary += `- **${test.testFile}::${test.testMethod}** (${test.probability.toUpperCase()} probability)\n`;
-          summary += `  - Reason: ${test.reason}\n`;
-          summary += `  - Suggestion: ${test.suggestion}\n\n`;
-        });
-      }
+      summary += `### Tests That Will Break:\n\n`;
+      report.testImpact.failingTests.forEach((test: any, index: number) => {
+        summary += `${index + 1}. **\`${test.testFile}::${test.testMethod}\`** - ${test.probability.toUpperCase()} chance of failure\n`;
+        summary += `   - **Why it will fail:** ${test.reason}\n`;
+        summary += `   - **What to fix:** ${test.suggestion}\n\n`;
+      });
       
-      if (report.testImpact.missingCoverage.length > 0) {
-        summary += `### 📝 Missing Test Coverage\n\n`;
-        summary += `**${report.testImpact.missingCoverage.length} method(s) without tests:**\n`;
-        report.testImpact.missingCoverage.slice(0, 10).forEach((missing: string) => {
-          summary += `- ${missing}\n`;
+      if (report.testImpact.affectedTests.length > 0) {
+        summary += `### Other Tests That May Be Affected:\n\n`;
+        report.testImpact.affectedTests.slice(0, 5).forEach((test: any) => {
+          summary += `- \`${test.testFile}::${test.testMethod}\` - ${test.probability} probability\n`;
         });
         summary += `\n`;
       }
+    } else if (report.testImpact && report.testImpact.affectedTests.length > 0) {
+      summary += `## 🧪 Test Impact\n\n`;
+      summary += `**${report.testImpact.affectedTests.length} test(s) may be affected** by this PR.\n\n`;
+      summary += `**Note:** No tests are predicted to fail, but review these tests:\n`;
+      report.testImpact.affectedTests.slice(0, 5).forEach((test: any) => {
+        summary += `- \`${test.testFile}::${test.testMethod}\`\n`;
+      });
+      summary += `\n`;
     }
 
-    // Add Performance Regression section
+    // 3. Performance Regressions (What will slow down?)
     if (report.performanceRegression && report.performanceRegression.regressions.length > 0) {
-      summary += `\n## ⚡ Performance Regression Detection\n\n`;
-      summary += `**Overall Impact:** ${report.performanceRegression.overallImpact.toUpperCase()}\n`;
-      summary += `**${report.performanceRegression.estimatedImpact}**\n\n`;
+      summary += `## ⚡ Performance Regressions (What Will Slow Down?)\n\n`;
+      summary += `**${report.performanceRegression.regressions.length} performance regression(s) detected** - your code will be slower.\n\n`;
+      summary += `${report.performanceRegression.estimatedImpact}\n\n`;
       
-      if (report.performanceRegression.regressions.length > 0) {
-        summary += `### ⚠️ Performance Regressions\n\n`;
-        report.performanceRegression.regressions.slice(0, 5).forEach((reg: any) => {
-          summary += `- **${reg.file}::${reg.method}** (${reg.severity.toUpperCase()})\n`;
-          summary += `  - Issue: ${reg.issue}\n`;
-          summary += `  - Impact: ${reg.impact}\n`;
-          summary += `  - Estimated Slowdown: ${reg.estimatedSlowdown}\n`;
-          summary += `  - Suggestion: ${reg.suggestion}\n\n`;
-        });
-      }
-      
-      if (report.performanceRegression.improvements.length > 0) {
-        summary += `### ✅ Performance Improvements\n\n`;
-        report.performanceRegression.improvements.slice(0, 3).forEach((imp: any) => {
-          summary += `- **${imp.file}::${imp.method}**: ${imp.impact}\n`;
-        });
-        summary += `\n`;
-      }
+      summary += `### Code That Will Be Slower:\n\n`;
+      report.performanceRegression.regressions.forEach((reg: any, index: number) => {
+        summary += `${index + 1}. **\`${reg.file}::${reg.method}\`** (${reg.severity.toUpperCase()} severity)\n`;
+        summary += `   - **What will slow down:** ${reg.issue}\n`;
+        summary += `   - **Impact:** ${reg.impact}\n`;
+        summary += `   - **Estimated slowdown:** ${reg.estimatedSlowdown}\n`;
+        summary += `   - **How to fix:** ${reg.suggestion}\n\n`;
+      });
     }
 
-    // Add Reviewer Suggestions section
+    // 5. Summary of What Will Break
+    summary += `\n## 📋 Summary: What Will Break?\n\n`;
+    
+    const willBreak: string[] = [];
+    if (report.impactAnalysis && report.impactAnalysis.impactedFiles.length > 0) {
+      willBreak.push(`${report.impactAnalysis.impactedFiles.length} file(s) will be affected`);
+    }
+    if (report.testImpact && report.testImpact.failingTests.length > 0) {
+      willBreak.push(`${report.testImpact.failingTests.length} test case(s) will fail`);
+    }
+    if (report.breakingChanges && report.breakingChanges.count > 0) {
+      willBreak.push(`${report.breakingChanges.count} breaking change(s) will cause compilation/runtime failures`);
+    }
+    if (report.performanceRegression && report.performanceRegression.regressions.length > 0) {
+      willBreak.push(`${report.performanceRegression.regressions.length} performance regression(s) will slow down the code`);
+    }
+    
+    if (willBreak.length > 0) {
+      summary += `**⚠️ This PR will cause the following issues:**\n\n`;
+      willBreak.forEach((item, index) => {
+        summary += `${index + 1}. ${item}\n`;
+      });
+      summary += `\n`;
+    } else {
+      summary += `**✅ No major breakage detected** - this PR appears safe to merge.\n\n`;
+    }
+    
+    // Action Items
+    summary += `## 🎯 Action Items Before Merge\n\n`;
+    summary += `1. **Review all affected files** listed above\n`;
+    if (report.testImpact && report.testImpact.failingTests.length > 0) {
+      summary += `2. **Fix failing tests** - ${report.testImpact.failingTests.length} test(s) will fail\n`;
+    }
+    if (report.breakingChanges && report.breakingChanges.count > 0) {
+      summary += `3. **Update calling code** - ${report.breakingChanges.count} breaking change(s) need fixes\n`;
+    }
+    if (report.impactAnalysis && report.impactAnalysis.impactedFiles.length > 0) {
+      summary += `4. **Test affected features** - ${report.impactAnalysis.impactedFeatures.length} feature(s) at risk\n`;
+    }
+    summary += `5. **Run full test suite** before merging\n`;
+    summary += `6. **Consider creating a migration guide** if breaking changes are intentional\n\n`;
+    
+    // Reviewer Suggestions (keep this)
     if (report.reviewerSuggestions && report.reviewerSuggestions.length > 0) {
-      summary += `\n## 👥 Suggested Reviewers\n\n`;
-      summary += `Based on code ownership and expertise:\n\n`;
+      summary += `## 👥 Suggested Reviewers\n\n`;
+      summary += `**Who should review this?** (based on code ownership):\n\n`;
       report.reviewerSuggestions.forEach((suggestion: any) => {
         summary += `- **@${suggestion.reviewer}** (${(suggestion.confidence * 100).toFixed(0)}% confidence)\n`;
         summary += `  - Reason: ${suggestion.reason}\n`;
-        summary += `  - Expertise: ${suggestion.expertise.join(', ')}\n`;
-        summary += `  - Recent Activity: ${suggestion.recentActivity} days ago\n\n`;
+        summary += `  - Expertise: ${suggestion.expertise.join(', ')}\n\n`;
       });
     }
     
@@ -1189,37 +1224,36 @@ export class EnterpriseReviewer {
       summary += `\n**Average Confidence:** ${(report.averageConfidence * 100).toFixed(1)}%\n`;
     }
     
+    // 4. Breaking Changes (What will break compilation/runtime?)
     if (report.breakingChanges && report.breakingChanges.count > 0) {
-      summary += `\n## Breaking Changes\n\n`;
-      summary += `**Total:** ${report.breakingChanges.count} breaking change(s) detected\n\n`;
+      summary += `## 💥 Breaking Changes (Code Will Break)\n\n`;
+      summary += `**${report.breakingChanges.count} breaking change(s)** - existing code will fail to compile or run.\n\n`;
       
-      report.breakingChanges.details.forEach((bc: any) => {
-        summary += `### ${bc.symbol} (${bc.changeType})\n`;
-        summary += `- **File:** ${bc.file}:${bc.line || 'N/A'}\n`;
+      report.breakingChanges.details.forEach((bc: any, index: number) => {
+        summary += `### ${index + 1}. \`${bc.file}::${bc.symbol}\` - ${bc.changeType.toUpperCase()}\n`;
+        summary += `**Status:** 🔴 **WILL BREAK**\n\n`;
+        
         if (bc.oldSignature || bc.newSignature) {
-          summary += `- **Change:** ${bc.oldSignature || 'N/A'} → ${bc.newSignature || 'N/A'}\n`;
+          summary += `**What changed:**\n`;
+          summary += `- **Before:** \`${bc.oldSignature || 'N/A'}\`\n`;
+          summary += `- **After:** \`${bc.newSignature || 'N/A'}\`\n\n`;
         }
-        summary += `- **Severity:** ${bc.severity}\n`;
+        
         if (bc.impactScore !== undefined) {
-          summary += `- **Impact Score:** ${bc.impactScore}/100\n`;
+          summary += `**Impact Score:** ${bc.impactScore}/100 (${bc.impactScore >= 70 ? 'HIGH' : bc.impactScore >= 40 ? 'MEDIUM' : 'LOW'} impact)\n\n`;
         }
         
         if (bc.callSites && bc.callSites.count > 0) {
-          summary += `- **Call Sites:** ${bc.callSites.count} found\n`;
-          summary += `- **Impacted Files:** ${bc.impactedFiles?.length || 0}\n\n`;
-          
-          if (bc.callSites.details && bc.callSites.details.length > 0) {
-            summary += `**Affected Areas in Main Branch:**\n`;
-            bc.callSites.details.slice(0, 10).forEach((cs: any) => {
-              summary += `  - ${cs.file}:${cs.line} (called from ${cs.caller})\n`;
-            });
-            if (bc.callSites.details.length > 10) {
-              summary += `  ... and ${bc.callSites.details.length - 10} more\n`;
-            }
-            summary += `\n`;
+          summary += `**Files that will break (${bc.callSites.count} locations):**\n`;
+          bc.callSites.details.slice(0, 10).forEach((cs: any) => {
+            summary += `- \`${cs.file}:${cs.line}\` - \`${cs.caller}()\` calls this method - **WILL FAIL**\n`;
+          });
+          if (bc.callSites.details.length > 10) {
+            summary += `- ... and ${bc.callSites.details.length - 10} more files will break\n`;
           }
+          summary += `\n`;
         } else {
-          summary += `- **Call Sites:** None found (may be external API or new code)\n\n`;
+          summary += `**Note:** No call sites found in indexed codebase (may be external API or new code)\n\n`;
         }
       });
     }
