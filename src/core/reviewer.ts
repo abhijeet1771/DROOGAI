@@ -270,7 +270,7 @@ export class EnterpriseReviewer {
    * Full enterprise review with all phases
    * OPTIMIZED: Collects all data first, then reviews with full context
    */
-  async reviewPR(prData: PRData, useIndex: boolean = false, geminiKey?: string, owner?: string, repo?: string): Promise<EnterpriseReviewReport> {
+  async reviewPR(prData: PRData, useIndex: boolean = false, geminiKey?: string, owner?: string, repo?: string, autoFix: boolean = false): Promise<EnterpriseReviewReport> {
     console.log('🚀 Starting Enterprise Code Review...\n');
     
     // Initialize index if requested
@@ -798,32 +798,34 @@ export class EnterpriseReviewer {
       enterpriseReport.dependencyMap = dependencyMap;
     }
 
-    // Leading Feature: Auto-Fix Generation (Top Priority)
-    console.log('  📋 Phase 0.29: Auto-Fix Code Generation...');
+    // Leading Feature: Auto-Fix Generation (Top Priority) - Only if enabled
     let autoFixReport: any = null;
-    try {
-      if ((this as any).geminiKey) {
-        const { AutoFixGenerator } = await import('../ai/auto-fix-generator.js');
-        const autoFixGenerator = new AutoFixGenerator((this as any).geminiKey);
-        autoFixReport = await autoFixGenerator.generateAutoFixes(
-          enterpriseReport.comments,
-          prFileContents
-        );
-        if (autoFixReport && autoFixReport.fixes.length > 0) {
-          console.log(`  ✓ Generated ${autoFixReport.fixes.length} auto-fix(es)`);
-          console.log(`  ✓ ${autoFixReport.canAutoApplyCount} can be applied automatically (saves ~${autoFixReport.estimatedTimeSaved})`);
+    if (autoFix) {
+      console.log('  📋 Phase 0.29: Auto-Fix Code Generation...');
+      try {
+        if ((this as any).geminiKey) {
+          const { AutoFixGenerator } = await import('../ai/auto-fix-generator.js');
+          const autoFixGenerator = new AutoFixGenerator((this as any).geminiKey);
+          autoFixReport = await autoFixGenerator.generateAutoFixes(
+            enterpriseReport.comments,
+            prFileContents
+          );
+          if (autoFixReport && autoFixReport.fixes.length > 0) {
+            console.log(`  ✓ Generated ${autoFixReport.fixes.length} auto-fix(es)`);
+            console.log(`  ✓ ${autoFixReport.canAutoApplyCount} can be applied automatically (saves ~${autoFixReport.estimatedTimeSaved})`);
+          } else {
+            console.log(`  ✓ No auto-fixes generated`);
+          }
         } else {
-          console.log(`  ✓ No auto-fixes generated`);
+          console.log(`  ⚠️  Gemini key not available - skipping auto-fix generation`);
         }
-      } else {
-        console.log(`  ⚠️  Gemini key not available - skipping auto-fix generation`);
+      } catch (error: any) {
+        console.log(`  ⚠️ Auto-fix generation failed (non-critical): ${error.message}`);
       }
-    } catch (error: any) {
-      console.log(`  ⚠️ Auto-fix generation failed (non-critical): ${error.message}`);
-    }
 
-    if (autoFixReport) {
-      enterpriseReport.autoFixes = autoFixReport;
+      if (autoFixReport) {
+        enterpriseReport.autoFixes = autoFixReport;
+      }
     }
     
     // All analysis already done in Phase 0, now just run architecture rules

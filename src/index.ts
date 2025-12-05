@@ -31,6 +31,7 @@ if (isLegacyFormat) {
     .option('--gemini-key <key>', 'Gemini API key (or use GEMINI_API_KEY env var)')
     .option('--post', 'Post comments back to GitHub PR')
     .option('--enterprise', 'Use enterprise-grade review (with advanced features)')
+    .option('--auto-fix', 'Enable auto code fix generation')
     .action(async (options) => {
       await runLegacyReview(options);
     });
@@ -52,6 +53,7 @@ if (isLegacyFormat) {
     .option('--gemini-key <key>', 'Gemini API key')
     .option('--post', 'Post comments to GitHub')
     .option('--enterprise', 'Use enterprise-grade review')
+    .option('--auto-fix', 'Enable auto code fix generation')
     .action(async (options) => {
       await runReview(options);
     });
@@ -130,7 +132,7 @@ async function runLegacyReview(options: any) {
   }
 
   if (options.enterprise) {
-    await runEnterpriseReview(owner, repo, prNumber, githubToken, geminiKey, options.post);
+    await runEnterpriseReview(owner, repo, prNumber, githubToken, geminiKey, options.post, options.autoFix);
   } else {
     await runBasicReview(owner, repo, prNumber, githubToken, geminiKey, options.post);
   }
@@ -202,7 +204,7 @@ async function runBasicReview(owner: string, repo: string, prNumber: number, git
 }
 
 // Enterprise review (new functionality)
-async function runEnterpriseReview(owner: string, repo: string, prNumber: number, githubToken: string, geminiKey: string, post: boolean) {
+async function runEnterpriseReview(owner: string, repo: string, prNumber: number, githubToken: string, geminiKey: string, post: boolean, autoFix: boolean = false) {
   try {
     const github = new GitHubClient(githubToken);
     const reviewer = new EnterpriseReviewer(geminiKey, githubToken);
@@ -244,7 +246,7 @@ async function runEnterpriseReview(owner: string, repo: string, prNumber: number
       console.log('⚠️  No index available - cross-repo features disabled\n');
     }
     
-    const report = await reviewer.reviewPR(prData, useIndex, geminiKey, owner, repo);
+    const report = await reviewer.reviewPR(prData, useIndex, geminiKey, owner, repo, autoFix);
 
     console.log('\n' + '='.repeat(60));
     console.log('📊 ENTERPRISE REVIEW RESULTS');
@@ -305,7 +307,7 @@ async function runReview(options: any) {
   }
   
   if (options.enterprise) {
-    await runEnterpriseReview(owner, repo, prNumber, githubToken, geminiKey, options.post);
+    await runEnterpriseReview(owner, repo, prNumber, githubToken, geminiKey, options.post, options.autoFix);
   } else {
     await runBasicReview(owner, repo, prNumber, githubToken, geminiKey, options.post);
   }
