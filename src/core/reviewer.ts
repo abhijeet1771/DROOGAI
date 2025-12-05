@@ -1131,6 +1131,47 @@ export class EnterpriseReviewer {
           summary += `   - **Fix:** ${mismatch.suggestion}\n\n`;
         });
       }
+      
+      // Batch 3: Breaking flow changes
+      if (report.prFlowValidation.breakingFlowChanges && report.prFlowValidation.breakingFlowChanges.length > 0) {
+        summary += `### Breaking Flow Changes\n\n`;
+        summary += `**${report.prFlowValidation.breakingFlowChanges.length} breaking flow change(s)** detected.\n\n`;
+        report.prFlowValidation.breakingFlowChanges.slice(0, 3).forEach((change: any, index: number) => {
+          summary += `${index + 1}. **\`${change.file}:${change.line}\`** - ${change.element}\n`;
+          if (change.oldValue && change.newValue) {
+            summary += `   - **Changed from:** \`${change.oldValue}\` → **to:** \`${change.newValue}\`\n`;
+          }
+          summary += `   - **Issue:** ${change.message}\n`;
+          summary += `   - **Fix:** ${change.suggestion}\n\n`;
+        });
+      }
+      
+      // Batch 3: Incomplete flows
+      if (report.prFlowValidation.incompleteFlows && report.prFlowValidation.incompleteFlows.length > 0) {
+        summary += `### Incomplete Flows\n\n`;
+        summary += `**${report.prFlowValidation.incompleteFlows.length} incomplete flow(s)** detected.\n\n`;
+        report.prFlowValidation.incompleteFlows.slice(0, 3).forEach((flow: any, index: number) => {
+          summary += `${index + 1}. **\`${flow.file}:${flow.line}\`** - ${flow.element}\n`;
+          if (flow.completenessScore) {
+            summary += `   - **Completeness:** ${flow.completenessScore}% (${this.getCompletenessDescription(flow.completenessScore)})\n`;
+          }
+          summary += `   - **Issue:** ${flow.message}\n`;
+          summary += `   - **Fix:** ${flow.suggestion}\n\n`;
+        });
+      }
+      
+      // Batch 3: Overall completeness score
+      if (report.prFlowValidation.overallCompletenessScore !== undefined) {
+        summary += `### Flow Completeness Score\n\n`;
+        summary += `**Overall Flow Completeness: ${report.prFlowValidation.overallCompletenessScore}%**\n\n`;
+        const score = report.prFlowValidation.overallCompletenessScore;
+        let description = '';
+        if (score >= 90) description = '✅ Excellent - Flow is nearly complete';
+        else if (score >= 75) description = '🟡 Good - Most flows are connected';
+        else if (score >= 50) description = '🟠 Fair - Some flows need completion';
+        else description = '🔴 Poor - Many flows are incomplete';
+        summary += `${description}\n\n`;
+      }
     }
     
     // Reviewer Suggestions (keep this - helpful for PR)

@@ -7,7 +7,7 @@
  */
 
 export interface PRFlowIssue {
-  type: 'unused_locator' | 'unused_method' | 'missing_step_def' | 'missing_feature_step' | 'broken_flow' | 'cross_file_issue' | 'method_call_mismatch';
+  type: 'unused_locator' | 'unused_method' | 'missing_step_def' | 'missing_feature_step' | 'broken_flow' | 'cross_file_issue' | 'method_call_mismatch' | 'breaking_flow_change' | 'incomplete_flow';
   severity: 'high' | 'medium' | 'low';
   file: string;
   line?: number;
@@ -23,6 +23,9 @@ export interface PRFlowIssue {
   }; // Cross-file flow tracking (Batch 2)
   actualCall?: string; // Actual method call found (Batch 2)
   expectedCall?: string; // Expected method call (Batch 2)
+  oldValue?: string; // Old value before change (Batch 3)
+  newValue?: string; // New value after change (Batch 3)
+  completenessScore?: number; // Flow completeness score 0-100 (Batch 3)
 }
 
 export interface PRFlowReport {
@@ -34,10 +37,13 @@ export interface PRFlowReport {
   brokenFlows: PRFlowIssue[];
   crossFileIssues: PRFlowIssue[]; // Batch 2
   methodCallMismatches: PRFlowIssue[]; // Batch 2
+  breakingFlowChanges: PRFlowIssue[]; // Batch 3
+  incompleteFlows: PRFlowIssue[]; // Batch 3
   flowGraph?: {
     nodes: Array<{ id: string; type: 'locator' | 'method' | 'stepdef' | 'feature'; file: string }>;
     edges: Array<{ from: string; to: string; type: string }>;
   }; // Batch 2: Dependency graph
+  overallCompletenessScore?: number; // Batch 3: Overall flow completeness (0-100)
   summary: string;
 }
 
@@ -55,6 +61,8 @@ export class PRFlowAnalyzer {
     const brokenFlows: PRFlowIssue[] = [];
     const crossFileIssues: PRFlowIssue[] = []; // Batch 2
     const methodCallMismatches: PRFlowIssue[] = []; // Batch 2
+    const breakingFlowChanges: PRFlowIssue[] = []; // Batch 3
+    const incompleteFlows: PRFlowIssue[] = []; // Batch 3
 
     try {
       // Extract all elements from PR files
@@ -62,6 +70,16 @@ export class PRFlowAnalyzer {
       
       // Batch 2: Build cross-file flow graph
       const flowGraph = this.buildFlowGraph(locators, methods, stepDefs, featureSteps);
+      
+      // Batch 3: Detect breaking flow changes and calculate completeness
+      const { breakingChanges, completenessScore } = this.detectBreakingFlowChangesAndCompleteness(
+        locators, methods, stepDefs, featureSteps, prFileNames
+      );
+      breakingFlowChanges.push(...breakingChanges);
+      
+      // Batch 3: Identify incomplete flows
+      const incomplete = this.identifyIncompleteFlows(locators, methods, stepDefs, featureSteps);
+      incompleteFlows.push(...incomplete);
 
       // 1. Check unused locators in PR
       for (const locator of locators) {
@@ -238,8 +256,12 @@ export class PRFlowAnalyzer {
         }
       }
 
+      // Add Batch 3 issues to main issues array
+      issues.push(...breakingFlowChanges);
+      issues.push(...incompleteFlows);
+
       // Generate summary
-      const summary = this.generateSummary(issues, unusedLocators, unusedMethods, missingStepDefs, missingFeatureSteps, brokenFlows, crossFileIssues, methodCallMismatches);
+      const summary = this.generateSummary(issues, unusedLocators, unusedMethods, missingStepDefs, missingFeatureSteps, brokenFlows, crossFileIssues, methodCallMismatches, breakingFlowChanges, incompleteFlows, completenessScore);
 
       return {
         issues,
@@ -250,7 +272,10 @@ export class PRFlowAnalyzer {
         brokenFlows,
         crossFileIssues, // Batch 2
         methodCallMismatches, // Batch 2
+        breakingFlowChanges, // Batch 3
+        incompleteFlows, // Batch 3
         flowGraph, // Batch 2
+        overallCompletenessScore: completenessScore, // Batch 3
         summary,
       };
     } catch (error: any) {
@@ -518,6 +543,228 @@ export class PRFlowAnalyzer {
   }
 
   /**
+   * Detect breaking flow changes (Batch 3)
+   * Detects when flow elements are renamed/removed/changed
+   */
+  private detectBreakingFlowChangesAndCompleteness(
+    locators: Array<{ name: string; file: string; line: number; code?: string }>,
+    methods: Array<{ name: string; file: string; line: number; code?: string }>,
+    stepDefs: Array<{ pattern: string; method: string; file: string; line: number; code?: string }>,
+    featureSteps: Array<{ step: string; file: string; line: number }>,
+    prFileNames: string[]
+  ): { breakingChanges: PRFlowIssue[]; completenessScore: number } {
+    const breakingChanges: PRFlowIssue[] = [];
+    
+    // Check for renamed methods (method exists but step def calls different name)
+    for (const method of methods) {
+      const stepDefsUsingMethod = stepDefs.filter(sd => 
+        this.isMethodCalledInStepDef(method.name, sd.code || '', sd.file)
+      );
+      
+      for (const stepDef of stepDefsUsingMethod) {
+        const actualCall = this.extractMethodCall(stepDef.code || '', method.name);
+        if (actualCall && actualCall !== method.name) {
+          // Potential rename - check if old name still exists
+          const oldMethodExists = methods.some(m => m.name === actualCall);
+          if (!oldMethodExists) {
+            breakingChanges.push({
+              type: 'breaking_flow_change',
+              severity: 'high',
+              file: stepDef.file,
+              line: stepDef.line,
+              element: method.name,
+              message: `Method renamed from "${actualCall}" to "${method.name}" - step definition still calls old name`,
+              suggestion: `Update step definition to call "${method.name}()" instead of "${actualCall}()"`,
+              oldValue: actualCall,
+              newValue: method.name,
+              relatedFiles: [method.file],
+            });
+          }
+        }
+      }
+    }
+    
+    // Check for renamed step definitions (pattern changed but feature still uses old pattern)
+    for (const stepDef of stepDefs) {
+      const matchingFeatures = featureSteps.filter(fs => 
+        this.matchesStepPattern(fs.step, stepDef.pattern)
+      );
+      
+      if (matchingFeatures.length === 0) {
+        // Step def pattern might have changed - check if similar pattern exists
+        const similarPattern = featureSteps.find(fs => 
+          fs.step.toLowerCase().includes(stepDef.pattern.toLowerCase().substring(0, 10))
+        );
+        
+        if (similarPattern) {
+          breakingChanges.push({
+            type: 'breaking_flow_change',
+            severity: 'high',
+            file: stepDef.file,
+            line: stepDef.line,
+            element: stepDef.pattern,
+            message: `Step definition pattern "${stepDef.pattern}" doesn't match feature step "${similarPattern.step}"`,
+            suggestion: `Update step definition pattern to match feature: "${similarPattern.step.replace(/^(Given|When|Then|And|But)\s+/i, '')}"`,
+            oldValue: stepDef.pattern,
+            newValue: similarPattern.step.replace(/^(Given|When|Then|And|But)\s+/i, ''),
+            relatedFiles: [similarPattern.file],
+          });
+        }
+      }
+    }
+    
+    // Calculate completeness score (Batch 3)
+    const completenessScore = this.calculateFlowCompleteness(locators, methods, stepDefs, featureSteps);
+    
+    return { breakingChanges, completenessScore };
+  }
+
+  /**
+   * Calculate flow completeness score (Batch 3)
+   * 0-100 score based on how complete the flow is
+   */
+  private calculateFlowCompleteness(
+    locators: Array<{ name: string; file: string; line: number; code?: string }>,
+    methods: Array<{ name: string; file: string; line: number; code?: string }>,
+    stepDefs: Array<{ pattern: string; method: string; file: string; line: number; code?: string }>,
+    featureSteps: Array<{ step: string; file: string; line: number }>
+  ): number {
+    if (locators.length === 0 && methods.length === 0 && stepDefs.length === 0 && featureSteps.length === 0) {
+      return 100; // No test automation code, consider complete
+    }
+
+    let score = 0;
+    let maxScore = 0;
+
+    // Check locator → method connections (25 points)
+    maxScore += 25;
+    if (locators.length > 0) {
+      const usedLocators = locators.filter(loc => 
+        methods.some(m => this.isLocatorUsedInMethod(loc.name, m.code || '', m.file))
+      );
+      score += (usedLocators.length / locators.length) * 25;
+    } else {
+      score += 25; // No locators to check
+    }
+
+    // Check method → step def connections (25 points)
+    maxScore += 25;
+    if (methods.length > 0) {
+      const methodsWithStepDefs = methods.filter(method => 
+        stepDefs.some(sd => this.isMethodCalledInStepDef(method.name, sd.code || '', sd.file))
+      );
+      score += (methodsWithStepDefs.length / methods.length) * 25;
+    } else {
+      score += 25; // No methods to check
+    }
+
+    // Check step def → feature connections (25 points)
+    maxScore += 25;
+    if (stepDefs.length > 0) {
+      const stepDefsWithFeatures = stepDefs.filter(sd => 
+        featureSteps.some(fs => this.matchesStepPattern(fs.step, sd.pattern))
+      );
+      score += (stepDefsWithFeatures.length / stepDefs.length) * 25;
+    } else {
+      score += 25; // No step defs to check
+    }
+
+    // Check complete flows (25 points)
+    maxScore += 25;
+    let completeFlows = 0;
+    let totalFlows = 0;
+    
+    for (const locator of locators) {
+      const method = methods.find(m => this.isLocatorUsedInMethod(locator.name, m.code || '', m.file));
+      if (method) {
+        totalFlows++;
+        const stepDef = stepDefs.find(sd => this.isMethodCalledInStepDef(method.name, sd.code || '', sd.file));
+        if (stepDef) {
+          const featureStep = featureSteps.find(fs => this.matchesStepPattern(fs.step, stepDef.pattern));
+          if (featureStep) {
+            completeFlows++;
+          }
+        }
+      }
+    }
+    
+    if (totalFlows > 0) {
+      score += (completeFlows / totalFlows) * 25;
+    } else {
+      score += 25; // No flows to check
+    }
+
+    return Math.round(score);
+  }
+
+  /**
+   * Identify incomplete flows (Batch 3)
+   */
+  private identifyIncompleteFlows(
+    locators: Array<{ name: string; file: string; line: number; code?: string }>,
+    methods: Array<{ name: string; file: string; line: number; code?: string }>,
+    stepDefs: Array<{ pattern: string; method: string; file: string; line: number; code?: string }>,
+    featureSteps: Array<{ step: string; file: string; line: number }>
+  ): PRFlowIssue[] {
+    const incomplete: PRFlowIssue[] = [];
+
+    for (const locator of locators) {
+      const method = methods.find(m => this.isLocatorUsedInMethod(locator.name, m.code || '', m.file));
+      
+      if (method) {
+        const stepDef = stepDefs.find(sd => this.isMethodCalledInStepDef(method.name, sd.code || '', sd.file));
+        
+        if (stepDef) {
+          const featureStep = featureSteps.find(fs => this.matchesStepPattern(fs.step, stepDef.pattern));
+          
+          if (!featureStep) {
+            // Flow is incomplete: locator → method → step def → MISSING feature
+            incomplete.push({
+              type: 'incomplete_flow',
+              severity: 'medium',
+              file: locator.file,
+              line: locator.line,
+              element: `${locator.name} → ${method.name} → ${stepDef.pattern} → MISSING`,
+              message: `Flow is incomplete: Locator "${locator.name}" → Method "${method.name}" → Step Def "${stepDef.pattern}" → Missing Feature Step`,
+              suggestion: `Add feature step: When ${stepDef.pattern}`,
+              relatedFiles: [method.file, stepDef.file],
+              completenessScore: 75, // 3 out of 4 steps complete
+            });
+          }
+        } else {
+          // Flow is incomplete: locator → method → MISSING step def
+          incomplete.push({
+            type: 'incomplete_flow',
+            severity: 'high',
+            file: locator.file,
+            line: locator.line,
+            element: `${locator.name} → ${method.name} → MISSING`,
+            message: `Flow is incomplete: Locator "${locator.name}" → Method "${method.name}" → Missing Step Definition`,
+            suggestion: `Add step definition for method "${method.name}"`,
+            relatedFiles: [method.file],
+            completenessScore: 50, // 2 out of 4 steps complete
+          });
+        }
+      } else {
+        // Flow is incomplete: locator → MISSING method
+        incomplete.push({
+          type: 'incomplete_flow',
+          severity: 'medium',
+          file: locator.file,
+          line: locator.line,
+          element: `${locator.name} → MISSING`,
+          message: `Flow is incomplete: Locator "${locator.name}" → Missing Method`,
+          suggestion: `Create method to use locator "${locator.name}"`,
+          relatedFiles: [],
+          completenessScore: 25, // 1 out of 4 steps complete
+        });
+      }
+    }
+
+    return incomplete;
+  }
+
+  /**
    * Generate human-readable summary
    */
   private generateSummary(
@@ -528,10 +775,13 @@ export class PRFlowAnalyzer {
     missingFeatureSteps: PRFlowIssue[],
     brokenFlows: PRFlowIssue[],
     crossFileIssues: PRFlowIssue[], // Batch 2
-    methodCallMismatches: PRFlowIssue[] // Batch 2
+    methodCallMismatches: PRFlowIssue[], // Batch 2
+    breakingFlowChanges: PRFlowIssue[], // Batch 3
+    incompleteFlows: PRFlowIssue[], // Batch 3
+    completenessScore: number // Batch 3
   ): string {
     if (issues.length === 0) {
-      return '✅ All PR flow elements are properly connected (Locator → Method → Step Def → Feature File)';
+      return `✅ All PR flow elements are properly connected (Locator → Method → Step Def → Feature File). Flow Completeness: ${completenessScore}%`;
     }
 
     const parts: string[] = [];
@@ -557,8 +807,14 @@ export class PRFlowAnalyzer {
     if (methodCallMismatches.length > 0) { // Batch 2
       parts.push(`${methodCallMismatches.length} method call mismatch(es)`);
     }
+    if (breakingFlowChanges.length > 0) { // Batch 3
+      parts.push(`${breakingFlowChanges.length} breaking flow change(s)`);
+    }
+    if (incompleteFlows.length > 0) { // Batch 3
+      parts.push(`${incompleteFlows.length} incomplete flow(s)`);
+    }
 
-    return `⚠️ Found ${issues.length} PR flow issue(s): ${parts.join(', ')}`;
+    return `⚠️ Found ${issues.length} PR flow issue(s): ${parts.join(', ')}. Flow Completeness: ${completenessScore}%`;
   }
 }
 
