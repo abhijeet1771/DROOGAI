@@ -920,19 +920,36 @@ export class EnterpriseReviewer {
     
     // Add Breaking Changes section (4)
     if (report.breakingChanges && report.breakingChanges.count > 0) {
-      summary += `\n## Test Coverage\n\n`;
-      summary += `**Line Coverage:** ${report.testCoverage.coverage.lineCoverage}%\n`;
-      summary += `**Branch Coverage:** ${report.testCoverage.coverage.branchCoverage}%\n`;
-      summary += `**Method Coverage:** ${report.testCoverage.coverage.methodCoverage}%\n`;
-      if (report.testCoverage.missingTests.length > 0) {
-        summary += `\n**Missing Tests:** ${report.testCoverage.missingTests.length}\n`;
-        report.testCoverage.missingTests.slice(0, 5).forEach(mt => {
-          summary += `- ${mt.method} in ${mt.file} - ${mt.severity}\n`;
-        });
-      }
-      if (report.testCoverage.edgeCases.length > 0) {
-        summary += `\n**Missing Edge Cases:** ${report.testCoverage.edgeCases.length}\n`;
-      }
+      summary += `## 💥 Breaking Changes (Code Will Break)\n\n`;
+      summary += `**${report.breakingChanges.count} breaking change(s)** - existing code will fail to compile or run.\n\n`;
+      
+      report.breakingChanges.details.forEach((bc: any, index: number) => {
+        summary += `### ${index + 1}. \`${bc.file}::${bc.symbol}\` - ${bc.changeType.toUpperCase()}\n`;
+        summary += `**Status:** 🔴 **WILL BREAK**\n\n`;
+        
+        if (bc.oldSignature || bc.newSignature) {
+          summary += `**What changed:**\n`;
+          summary += `- **Before:** \`${bc.oldSignature || 'N/A'}\`\n`;
+          summary += `- **After:** \`${bc.newSignature || 'N/A'}\`\n\n`;
+        }
+        
+        if (bc.impactScore !== undefined) {
+          summary += `**Impact Score:** ${bc.impactScore}/100 (${bc.impactScore >= 70 ? 'HIGH' : bc.impactScore >= 40 ? 'MEDIUM' : 'LOW'} impact)\n\n`;
+        }
+        
+        if (bc.callSites && bc.callSites.count > 0) {
+          summary += `**Files that will break (${bc.callSites.count} locations):**\n`;
+          bc.callSites.details.slice(0, 10).forEach((cs: any) => {
+            summary += `- \`${cs.file}:${cs.line}\` - \`${cs.caller}()\` calls this method - **WILL FAIL**\n`;
+          });
+          if (bc.callSites.details.length > 10) {
+            summary += `- ... and ${bc.callSites.details.length - 10} more files will break\n`;
+          }
+          summary += `\n`;
+        } else {
+          summary += `**Note:** No call sites found in indexed codebase (may be external API or new code)\n\n`;
+        }
+      });
     }
 
     if (report.dependencies && (report.dependencies.vulnerabilities.length > 0 || report.dependencies.unused.length > 0 || report.dependencies.conflicts.length > 0)) {
