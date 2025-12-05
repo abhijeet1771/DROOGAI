@@ -28,11 +28,20 @@ export class CommentPoster {
       return;
     }
 
-    console.log(`\n📤 Posting ${comments.length} comment(s) to GitHub...\n`);
+    // RISK-FOCUSED: Only post comments related to "what will break"
+    // Filter out traditional code review comments (security, maintainability, style)
+    const riskFocusedComments = this.filterRiskFocusedComments(comments);
+    
+    if (riskFocusedComments.length === 0) {
+      console.log('\n✓ No risk-focused comments to post (no breaking changes detected).');
+      return;
+    }
+
+    console.log(`\n📤 Posting ${riskFocusedComments.length} risk-focused comment(s) to GitHub...\n`);
 
     // Group comments by file to avoid spam
     const commentsByFile = new Map<string, ReviewComment[]>();
-    for (const comment of comments) {
+    for (const comment of riskFocusedComments) {
       if (!commentsByFile.has(comment.file)) {
         commentsByFile.set(comment.file, []);
       }
@@ -145,6 +154,77 @@ export class CommentPoster {
     }
 
     return summary;
+  }
+
+  /**
+   * Filter comments to only include risk-focused ones (what will break)
+   * Excludes: security, maintainability, style, general code review
+   * Includes: breaking changes, test failures, performance regressions, impact issues
+   */
+  private filterRiskFocusedComments(comments: ReviewComment[]): ReviewComment[] {
+    return comments.filter(comment => {
+      const message = (comment.message || '').toLowerCase();
+      const suggestion = (comment.suggestion || '').toLowerCase();
+      const combined = `${message} ${suggestion}`.toLowerCase();
+
+      // INCLUDE: Breaking change related
+      if (combined.includes('breaking change') || 
+          combined.includes('signature changed') ||
+          combined.includes('visibility reduced') ||
+          combined.includes('return type changed') ||
+          combined.includes('parameter type changed') ||
+          combined.includes('method removed') ||
+          combined.includes('will break') ||
+          combined.includes('will fail') ||
+          combined.includes('compilation') ||
+          combined.includes('runtime failure')) {
+        return true;
+      }
+
+      // INCLUDE: Test failure related
+      if (combined.includes('test will fail') ||
+          combined.includes('test case') ||
+          combined.includes('test method') ||
+          combined.includes('failing test')) {
+        return true;
+      }
+
+      // INCLUDE: Performance regression related
+      if (combined.includes('performance regression') ||
+          combined.includes('will be slower') ||
+          combined.includes('n+1 query') ||
+          combined.includes('complexity increased') ||
+          combined.includes('slowdown')) {
+        return true;
+      }
+
+      // INCLUDE: Impact analysis related
+      if (combined.includes('impacted file') ||
+          combined.includes('call site') ||
+          combined.includes('affected feature') ||
+          combined.includes('will be affected')) {
+        return true;
+      }
+
+      // EXCLUDE: Traditional code review (security, maintainability, style)
+      if (combined.includes('hardcoded credential') ||
+          combined.includes('security risk') ||
+          combined.includes('maintainability') ||
+          combined.includes('code style') ||
+          combined.includes('naming convention') ||
+          combined.includes('magic number') ||
+          combined.includes('code smell') ||
+          combined.includes('best practice') ||
+          combined.includes('consider using') ||
+          combined.includes('should use') ||
+          message.includes('suggestion:') && !message.includes('will break')) {
+        return false;
+      }
+
+      // Default: Only include high/critical severity for risk-focused
+      const sev = (comment.severity || '').toLowerCase();
+      return sev === 'high' || sev === 'critical';
+    });
   }
 }
 
