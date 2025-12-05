@@ -214,7 +214,16 @@ export class CommentPoster {
    * Convert technical message to conversational tone
    */
   private makeConversational(message: string): string {
-    let conversational = message;
+    let conversational = message.trim();
+    
+    // Remove existing "I noticed" prefix if LLM already added it
+    if (conversational.toLowerCase().startsWith('i noticed')) {
+      conversational = conversational.substring(9).trim();
+      // Remove duplicate "this" if present
+      if (conversational.toLowerCase().startsWith('this')) {
+        conversational = conversational.substring(4).trim();
+      }
+    }
     
     // Replace technical terms with conversational ones
     conversational = conversational.replace(/Issue detected:/gi, '');

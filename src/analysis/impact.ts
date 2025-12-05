@@ -69,11 +69,8 @@ export class ImpactAnalyzer {
         const callSites = this.indexer.findCallers(prSymbol.name);
         
         for (const callSite of callSites) {
-          // Skip if call site is in PR files (already being reviewed)
-          if (prFiles.includes(callSite.file)) {
-            continue;
-          }
-
+          // Include call sites even in PR files - they still break!
+          // Mark them as in-PR but still show impact
           impactedFilesSet.add(callSite.file);
           
           // Determine risk level

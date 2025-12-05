@@ -925,7 +925,20 @@ export class EnterpriseReviewer {
       impacts.push(`**${report.performanceRegression.regressions.length} performance regression(s)** detected`);
     }
     if (report.breakingChanges && report.breakingChanges.count > 0) {
-      impacts.push(`**${report.breakingChanges.count} breaking change(s)** affecting ${report.breakingChanges.impactedFiles.length} file(s)`);
+      // Count total impacted files from all breaking changes (including call sites)
+      const totalImpactedFiles = new Set<string>();
+      let totalCallSites = 0;
+      report.breakingChanges.details.forEach((bc: any) => {
+        if (bc.impactedFiles) {
+          bc.impactedFiles.forEach((file: string) => totalImpactedFiles.add(file));
+        }
+        if (bc.callSites) {
+          totalCallSites += bc.callSites.length;
+          bc.callSites.forEach((cs: any) => totalImpactedFiles.add(cs.file));
+        }
+      });
+      
+      impacts.push(`**${report.breakingChanges.count} breaking change(s)** affecting ${totalImpactedFiles.size} file(s) (${totalCallSites} call site(s))`);
     }
     
     if (impacts.length > 0) {
@@ -943,10 +956,24 @@ export class EnterpriseReviewer {
     
     if (report.breakingChanges && report.breakingChanges.count > 0) {
       const topBreakingChange = report.breakingChanges.details[0];
+      // Count total call sites across all breaking changes
+      const totalCallSites = report.breakingChanges.details.reduce((sum: number, bc: any) => {
+        return sum + (bc.callSites?.length || 0);
+      }, 0);
+      const totalImpactedFiles = new Set<string>();
+      report.breakingChanges.details.forEach((bc: any) => {
+        if (bc.impactedFiles) {
+          bc.impactedFiles.forEach((file: string) => totalImpactedFiles.add(file));
+        }
+        if (bc.callSites) {
+          bc.callSites.forEach((cs: any) => totalImpactedFiles.add(cs.file));
+        }
+      });
+      
       mustFix.push({
         priority: '🔴 HIGH',
         issue: `Breaking change in ${topBreakingChange.file}::${topBreakingChange.symbol}`,
-        impact: `${report.breakingChanges.impactedFiles.length} file(s) will break`
+        impact: `${totalImpactedFiles.size} file(s) will break (${totalCallSites} call site(s))`
       });
     }
     
