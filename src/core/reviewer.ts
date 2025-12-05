@@ -221,7 +221,7 @@ export class EnterpriseReviewer {
    * Full enterprise review with all phases
    * OPTIMIZED: Collects all data first, then reviews with full context
    */
-  async reviewPR(prData: PRData, useIndex: boolean = false, geminiKey?: string): Promise<EnterpriseReviewReport> {
+  async reviewPR(prData: PRData, useIndex: boolean = false, geminiKey?: string, owner?: string, repo?: string): Promise<EnterpriseReviewReport> {
     console.log('🚀 Starting Enterprise Code Review...\n');
     
     // Initialize index if requested
@@ -317,9 +317,17 @@ export class EnterpriseReviewer {
     console.log('\n📋 Phase 0.19: Reviewer Suggestions...');
     const { ReviewerSuggester } = await import('../ownership/reviewer-suggester.js');
     this.reviewerSuggester = new ReviewerSuggester(this.github);
-    const [owner, repo] = prData.head.ref.split('/'); // Extract from PR data
-    const reviewerSuggestions = await this.reviewerSuggester.suggestReviewers(prFileNames, owner || 'unknown', repo || 'unknown');
-    console.log(`✓ Suggested ${reviewerSuggestions.length} reviewer(s) based on code ownership`);
+    let reviewerSuggestions: any[] = [];
+    if (owner && repo) {
+      try {
+        reviewerSuggestions = await this.reviewerSuggester.suggestReviewers(prFileNames, owner, repo);
+        console.log(`✓ Suggested ${reviewerSuggestions.length} reviewer(s) based on code ownership`);
+      } catch (error) {
+        console.warn('⚠️  Reviewer suggestion failed:', (error as any).message);
+      }
+    } else {
+      console.log('⚠️  Owner/repo not provided - skipping reviewer suggestions');
+    }
     
     // Design patterns
     const patterns = this.patternDetector.detectPatterns(prSymbols);

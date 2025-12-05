@@ -244,7 +244,9 @@ async function runEnterpriseReview(owner: string, repo: string, prNumber: number
       console.log('⚠️  No index available - cross-repo features disabled\n');
     }
     
-    const report = await reviewer.reviewPR(prData, useIndex, geminiKey);
+    // Extract owner/repo from PR data or options
+    const [owner, repo] = options.repo?.split('/') || [prData.head.ref.split('/')[0], prData.head.ref.split('/')[1]] || ['unknown', 'unknown'];
+    const report = await reviewer.reviewPR(prData, useIndex, geminiKey, owner, repo);
 
     console.log('\n' + '='.repeat(60));
     console.log('📊 ENTERPRISE REVIEW RESULTS');
