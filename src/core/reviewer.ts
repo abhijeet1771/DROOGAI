@@ -717,7 +717,7 @@ export class EnterpriseReviewer {
         prFileNames,
         detectedIssues
       );
-      if (patternMemoryReport.similarBugs.length > 0 || patternMemoryReport.similarReviews.length > 0) {
+      if (patternMemoryReport && (patternMemoryReport.similarBugs.length > 0 || patternMemoryReport.similarReviews.length > 0)) {
         console.log(`  ✓ Found ${patternMemoryReport.similarBugs.length} similar bug(s), ${patternMemoryReport.similarReviews.length} similar review(s)`);
       } else {
         console.log(`  ✓ No similar patterns found in history`);
@@ -739,7 +739,7 @@ export class EnterpriseReviewer {
           prFileContents,
           mainBranchSymbols
         );
-        if (codebaseKnowledgeReport.suggestions.length > 0) {
+        if (codebaseKnowledgeReport && codebaseKnowledgeReport.suggestions.length > 0) {
           console.log(`  ✓ Found ${codebaseKnowledgeReport.suggestions.length} code reuse opportunity(ies)`);
         } else {
           console.log(`  ✓ No code reuse opportunities found`);
