@@ -628,17 +628,16 @@ export class EnterpriseReviewer {
         estimatedImpact: perfAnalysis.estimatedImpact,
       },
       reviewerSuggestions: reviewerSuggestions,
-      locatorSuggestions: {
+      locatorSuggestions: locatorSuggestions.length > 0 ? {
         suggestions: locatorSuggestions,
-        framework: locatorSuggestions.length > 0 ? locatorSuggestions[0].framework : 'unknown',
+        framework: locatorSuggestions[0].framework,
         totalIssues: locatorSuggestions.length,
-      },
-      gherkinSuggestions: {
+      } : undefined,
+      gherkinSuggestions: gherkinSuggestions.length > 0 ? {
         suggestions: gherkinSuggestions,
         totalIssues: gherkinSuggestions.length,
-        readabilityScore: gherkinSuggestions.length > 0 ? 
-          gherkinAnalyzer.analyzeGherkin(Array.from(prFileContents.values()).join('\n'), 'combined').readabilityScore : 100,
-      },
+        readabilityScore: gherkinAnalyzer.analyzeGherkin(Array.from(prFileContents.values()).join('\n'), 'combined').readabilityScore,
+      } : undefined,
     };
     
     // All analysis already done in Phase 0, now just run architecture rules
