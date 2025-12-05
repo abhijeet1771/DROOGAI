@@ -29,6 +29,7 @@ import { BusinessImpactMapper, BusinessImpactReport } from '../analysis/business
 import { RiskPrioritizer, RiskPrioritizationReport } from '../analysis/risk-prioritizer.js';
 import { PatternMemorySystem, PatternMemoryReport } from '../learning/pattern-memory.js';
 import { CodebaseKnowledgeEngine, CodebaseKnowledgeReport } from '../intelligence/codebase-knowledge.js';
+import { DependencyMapper, DependencyMap } from '../analysis/dependency-mapper.js';
 
 export interface EnterpriseReviewReport {
   prNumber: number;
@@ -164,6 +165,7 @@ export interface EnterpriseReviewReport {
   riskPrioritization?: RiskPrioritizationReport; // Sprint 3.3: Risk prioritization
   patternMemory?: PatternMemoryReport; // Sprint 4.1: Pattern memory system
   codebaseKnowledge?: CodebaseKnowledgeReport; // Sprint 4.2: Codebase knowledge engine
+  dependencyMap?: DependencyMap; // Sprint 4.3: Dependency mapper
   prFlowValidation?: {
     issues: any[];
     unusedLocators: any[];
@@ -217,6 +219,7 @@ export class EnterpriseReviewer {
   private reviewerSuggester?: any;
   private patternMemory: PatternMemorySystem;
   private codebaseKnowledge: CodebaseKnowledgeEngine | null = null;
+  private dependencyMapper: DependencyMapper | null = null;
   
   constructor(geminiKey: string, githubToken: string) {
     this.geminiKey = geminiKey;
@@ -755,12 +758,43 @@ export class EnterpriseReviewer {
       console.log(`  ⚠️ Codebase knowledge analysis failed (non-critical): ${error.message}`);
     }
 
+    // Phase 0.28: Dependency Mapper (Sprint 4.3)
+    console.log('  📋 Phase 0.28: Dependency Mapping...');
+    let dependencyMap: DependencyMap | null = null;
+    try {
+      if (useIndex && mainBranchSymbols.length > 0) {
+        if (!this.dependencyMapper) {
+          this.dependencyMapper = new DependencyMapper(this.indexer);
+        }
+        dependencyMap = this.dependencyMapper.mapDependencies(
+          prSymbols,
+          prFileContents,
+          mainBranchSymbols
+        );
+        if (dependencyMap.dependencies.length > 0) {
+          console.log(`  ✓ Found ${dependencyMap.dependencies.length} dependency(ies)`);
+          if (dependencyMap.circularDependencies.length > 0) {
+            console.log(`  ⚠️  ${dependencyMap.circularDependencies.length} circular dependency(ies) detected`);
+          }
+        } else {
+          console.log(`  ✓ No cross-file dependencies detected`);
+        }
+      } else {
+        console.log(`  ⚠️  Index not available - skipping dependency mapping`);
+      }
+    } catch (error: any) {
+      console.log(`  ⚠️ Dependency mapping failed (non-critical): ${error.message}`);
+    }
+
     // Add pattern memory and codebase knowledge reports
     if (patternMemoryReport) {
       enterpriseReport.patternMemory = patternMemoryReport;
     }
     if (codebaseKnowledgeReport) {
       enterpriseReport.codebaseKnowledge = codebaseKnowledgeReport;
+    }
+    if (dependencyMap) {
+      enterpriseReport.dependencyMap = dependencyMap;
     }
     
     // All analysis already done in Phase 0, now just run architecture rules
@@ -1434,6 +1468,63 @@ export class EnterpriseReviewer {
           summary += `${index + 1}. **${suggestion.element}** - ${suggestion.suggestion}\n`;
           summary += `   - **Location:** \`${suggestion.existingLocation}\`\n\n`;
         });
+      }
+    }
+
+    // Dependency Map (Sprint 4.3)
+    if (report.dependencyMap && report.dependencyMap.dependencies.length > 0) {
+      summary += `\n## 🔗 Dependency Map (Cross-File Relationships)\n\n`;
+      summary += `${report.dependencyMap.summary}\n\n`;
+      
+      if (report.dependencyMap.circularDependencies.length > 0) {
+        summary += `### ⚠️ Circular Dependencies (Must Fix)\n\n`;
+        report.dependencyMap.circularDependencies.slice(0, 3).forEach((circular: any, index: number) => {
+          summary += `${index + 1}. ${circular.description}\n`;
+          summary += `   - **Files:** ${circular.files.join(' ↔ ')}\n\n`;
+        });
+      }
+
+      if (report.dependencyMap.dependencyChains.length > 0) {
+        const criticalChains = report.dependencyMap.dependencyChains.filter((chain: any) => chain.critical);
+        if (criticalChains.length > 0) {
+          summary += `### Critical Dependency Chains\n\n`;
+          criticalChains.slice(0, 2).forEach((chain: any, index: number) => {
+            summary += `${index + 1}. **${chain.depth} file(s) deep**\n`;
+            summary += `   - **Chain:** ${chain.files.join(' → ')}\n`;
+            summary += `   - **Description:** ${chain.description}\n\n`;
+          });
+        }
+      }
+
+      if (report.dependencyMap.constants.length > 0) {
+        const extractable = report.dependencyMap.constants.filter((c: any) => c.shouldExtract);
+        if (extractable.length > 0) {
+          summary += `### Constants to Extract\n\n`;
+          summary += `These constants are used in multiple files and should be extracted:\n\n`;
+          extractable.slice(0, 5).forEach((constant: any, index: number) => {
+            summary += `${index + 1}. **\`${constant.constant}\`** = \`${constant.value}\`\n`;
+            summary += `   - **Used in:** ${constant.count} file(s)\n`;
+            summary += `   - **Files:** ${constant.files.slice(0, 3).join(', ')}${constant.files.length > 3 ? `, ...` : ''}\n\n`;
+          });
+        }
+      }
+
+      // Show affected files
+      if (report.dependencyMap.affectedFiles.size > 0) {
+        summary += `### Files That Will Be Affected\n\n`;
+        let count = 0;
+        for (const [file, dependents] of report.dependencyMap.affectedFiles.entries()) {
+          if (count >= 5) break;
+          summary += `- **\`${file}\`** - ${dependents.length} file(s) depend on this:\n`;
+          dependents.slice(0, 3).forEach((dep: string) => {
+            summary += `  - \`${dep}\`\n`;
+          });
+          if (dependents.length > 3) {
+            summary += `  - ... and ${dependents.length - 3} more\n`;
+          }
+          summary += `\n`;
+          count++;
+        }
       }
     }
     
