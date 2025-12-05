@@ -152,6 +152,7 @@ export interface EnterpriseReviewReport {
     readabilityScore: number;
   };
   codeOrganization?: OrganizationReport; // Sprint 2.1: Code organization suggestions
+  contextIntelligence?: ContextReport; // Sprint 2.2: Context-aware intelligence
   prFlowValidation?: {
     issues: any[];
     unusedLocators: any[];
@@ -1209,6 +1210,37 @@ export class EnterpriseReviewer {
           summary += `   - **Issue:** ${issue.message}\n`;
           summary += `   - **Fix:** ${issue.suggestion}\n\n`;
         });
+      }
+    }
+
+    // Context-Aware Intelligence (Sprint 2.2)
+    if (report.contextIntelligence) {
+      const ctx = report.contextIntelligence;
+      if (ctx.domain.confidence > 0.3 || ctx.suggestions.length > 0) {
+        summary += `\n## 🧠 Context-Aware Intelligence\n\n`;
+        
+        if (ctx.domain.confidence > 0.3) {
+          summary += `**Detected Domain:** ${ctx.domain.domain} (${(ctx.domain.confidence * 100).toFixed(0)}% confidence)\n\n`;
+          if (ctx.domain.indicators.length > 0) {
+            summary += `**Indicators:** ${ctx.domain.indicators.slice(0, 3).join(', ')}\n\n`;
+          }
+        }
+
+        if (ctx.suggestions.length > 0) {
+          summary += `### Contextual Suggestions\n\n`;
+          ctx.suggestions.slice(0, 5).forEach((suggestion: string, index: number) => {
+            summary += `${index + 1}. ${suggestion}\n`;
+          });
+          summary += `\n`;
+        }
+
+        if (ctx.teamPatterns.length > 0) {
+          summary += `### Team Patterns Detected\n\n`;
+          ctx.teamPatterns.slice(0, 3).forEach((pattern: any, index: number) => {
+            summary += `${index + 1}. **${pattern.pattern}** (found ${pattern.frequency} time(s))\n`;
+          });
+          summary += `\n`;
+        }
       }
     }
     
