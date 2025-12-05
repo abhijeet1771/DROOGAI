@@ -151,6 +151,7 @@ export interface EnterpriseReviewReport {
     totalIssues: number;
     readabilityScore: number;
   };
+  codeOrganization?: OrganizationReport; // Sprint 2.1: Code organization suggestions
   prFlowValidation?: {
     issues: any[];
     unusedLocators: any[];
@@ -1186,7 +1187,7 @@ export class EnterpriseReviewer {
     // Code Organization (Sprint 2.1)
     if (report.codeOrganization && report.codeOrganization.issues.length > 0) {
       summary += `\n## 📁 Code Organization\n\n`;
-      summary += `${report.codeOrganization.summary}\n\n`;
+      summary += `${report.codeOrganization.issues.length > 0 ? `Found ${report.codeOrganization.issues.length} code organization issue(s)` : 'Code organization follows best practices'}\n\n`;
       
       const wrongLocation = report.codeOrganization.issues.filter((i: any) => i.type === 'wrong_location');
       const separation = report.codeOrganization.issues.filter((i: any) => i.type === 'missing_separation');
