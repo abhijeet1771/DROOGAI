@@ -215,6 +215,8 @@ export class EnterpriseReviewer {
   private patternLearner?: any;
   private mlLearner?: any;
   private reviewerSuggester?: any;
+  private patternMemory: PatternMemorySystem;
+  private codebaseKnowledge: CodebaseKnowledgeEngine | null = null;
   
   constructor(geminiKey: string, githubToken: string) {
     this.geminiKey = geminiKey;
@@ -240,6 +242,8 @@ export class EnterpriseReviewer {
     this.technicalDebtAnalyzer = new TechnicalDebtAnalyzer();
     this.migrationSafetyAnalyzer = new MigrationSafetyAnalyzer();
     this.organizationAnalyzer = new OrganizationAnalyzer();
+    this.patternMemory = new PatternMemorySystem();
+    // codebaseKnowledge will be initialized when indexer is available
   }
   
   /**
