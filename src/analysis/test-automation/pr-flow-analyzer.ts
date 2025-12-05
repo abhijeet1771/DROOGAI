@@ -262,6 +262,8 @@ export class PRFlowAnalyzer {
         missingStepDefs: [],
         missingFeatureSteps: [],
         brokenFlows: [],
+        crossFileIssues: [], // Batch 2
+        methodCallMismatches: [], // Batch 2
         summary: 'PR flow validation failed (non-critical)',
       };
     }
