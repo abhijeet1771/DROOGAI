@@ -113,6 +113,12 @@ export interface EnterpriseReviewReport {
   technicalDebt?: TechnicalDebtReport;
   migrationSafety?: MigrationSafetyReport;
   organization?: OrganizationReport;
+  codeSmells?: {
+    smells: any[];
+    byCategory: any;
+    byType: Record<string, any[]>;
+    total: number;
+  };
   summary?: string;
   recommendations?: string;
   averageConfidence?: number;
@@ -542,6 +548,28 @@ export class EnterpriseReviewer {
     }
     console.log(`✓ Found ${violations.length} architecture violations`);
     
+    // Phase 6.5: Categorize code smells
+    console.log('\n📋 Phase 6.5: Categorizing Code Smells...');
+    const { CodeSmellCategorizer } = await import('../analysis/code-smells.js');
+    const codeSmellCategorizer = new CodeSmellCategorizer();
+    const codeSmellReport = codeSmellCategorizer.categorizeCodeSmells(
+      enterpriseReport.comments.map(c => ({
+        file: c.file,
+        line: c.line,
+        message: c.message || '',
+        severity: c.severity || 'medium',
+      })),
+      prSymbols,
+      enterpriseReport.designPatterns?.antiPatterns || []
+    );
+    enterpriseReport.codeSmells = {
+      smells: codeSmellReport.smells,
+      byCategory: codeSmellReport.byCategory,
+      byType: codeSmellReport.byType,
+      total: codeSmellReport.total,
+    };
+    console.log(`✓ Categorized ${codeSmellReport.total} code smell(s)`);
+    
     // Phase 7: Calculate confidence scores
     console.log('\n📋 Phase 7: Calculating Confidence Scores...');
     const confidences = enterpriseReport.comments
@@ -883,6 +911,30 @@ export class EnterpriseReviewer {
         report.technicalDebt.reductionStrategy.slice(0, 3).forEach(strategy => {
           summary += `- [${strategy.priority.toUpperCase()}] ${strategy.description} (${strategy.estimatedHours}h) - ${strategy.impact}\n`;
         });
+      }
+    }
+
+    // Add code smells section
+    if (report.codeSmells && report.codeSmells.total > 0) {
+      summary += `\n## Code Smells\n\n`;
+      summary += `**Total:** ${report.codeSmells.total} code smell(s) detected\n\n`;
+      
+      if (report.codeSmells.byCategory.structural.length > 0) {
+        summary += `**Structural Smells:** ${report.codeSmells.byCategory.structural.length}\n`;
+        report.codeSmells.byCategory.structural.slice(0, 5).forEach((smell: any) => {
+          summary += `- ${smell.type.replace(/_/g, ' ')} in ${smell.location} (${smell.file}) - ${smell.severity}\n`;
+          summary += `  → Refactoring: ${smell.refactoring}\n`;
+        });
+        summary += `\n`;
+      }
+      
+      if (report.codeSmells.byCategory.behavioral.length > 0) {
+        summary += `**Behavioral Smells:** ${report.codeSmells.byCategory.behavioral.length}\n`;
+        report.codeSmells.byCategory.behavioral.slice(0, 5).forEach((smell: any) => {
+          summary += `- ${smell.type.replace(/_/g, ' ')} in ${smell.location} (${smell.file}) - ${smell.severity}\n`;
+          summary += `  → Refactoring: ${smell.refactoring}\n`;
+        });
+        summary += `\n`;
       }
     }
 

@@ -59,18 +59,34 @@ export class ComplexityAnalyzer {
     const hotspots: ComplexityHotspot[] = [];
 
     for (const symbol of symbols) {
-      if (symbol.type === 'method') {
+      if (symbol.type === 'method' || symbol.type === 'function') {
         const metrics = this.calculateComplexity(symbol);
         
-        // High complexity threshold
-        if (metrics.cyclomaticComplexity > 15 || metrics.cognitiveComplexity > 20) {
+        // Lower thresholds to catch more complexity issues
+        // High: > 10 cyclomatic or > 15 cognitive
+        // Medium: > 7 cyclomatic or > 10 cognitive
+        // Low: > 5 cyclomatic or > 7 cognitive
+        const isHigh = metrics.cyclomaticComplexity > 10 || metrics.cognitiveComplexity > 15;
+        const isMedium = metrics.cyclomaticComplexity > 7 || metrics.cognitiveComplexity > 10;
+        const isLow = metrics.cyclomaticComplexity > 5 || metrics.cognitiveComplexity > 7;
+        
+        if (isHigh || isMedium || isLow) {
+          let severity: 'high' | 'medium' | 'low';
+          if (metrics.cyclomaticComplexity > 20 || metrics.cognitiveComplexity > 25) {
+            severity = 'high';
+          } else if (metrics.cyclomaticComplexity > 10 || metrics.cognitiveComplexity > 15) {
+            severity = 'medium';
+          } else {
+            severity = 'low';
+          }
+          
           hotspots.push({
             file: symbol.file,
             method: symbol.name,
             line: symbol.startLine,
             complexity: Math.max(metrics.cyclomaticComplexity, metrics.cognitiveComplexity),
-            severity: metrics.cyclomaticComplexity > 25 || metrics.cognitiveComplexity > 30 ? 'high' : 'medium',
-            suggestion: `Method has high complexity (Cyclomatic: ${metrics.cyclomaticComplexity}, Cognitive: ${metrics.cognitiveComplexity}). Consider refactoring into smaller methods.`
+            severity,
+            suggestion: `Method has ${severity} complexity (Cyclomatic: ${metrics.cyclomaticComplexity}, Cognitive: ${metrics.cognitiveComplexity}). Consider refactoring into smaller methods or extracting helper functions.`
           });
         }
       }
@@ -207,6 +223,7 @@ export class ComplexityAnalyzer {
     };
   }
 }
+
 
 
 

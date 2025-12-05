@@ -229,15 +229,34 @@ export class DocumentationAnalyzer {
     let javaDocContent = '';
     let inJavaDoc = false;
 
+    // Search backwards from symbol line for JavaDoc
     for (let i = symbolLine - 1; i >= Math.max(0, symbolLine - 20); i--) {
       const line = lines[i].trim();
       if (line.includes('*/')) {
+        // End of JavaDoc found, start collecting
         inJavaDoc = true;
         continue;
       }
       if (inJavaDoc) {
         javaDocContent = line + '\n' + javaDocContent;
         if (line.includes('/**')) {
+          // Start of JavaDoc found, stop
+          break;
+        }
+      }
+    }
+    
+    // Also check if JavaDoc is on same line or after
+    if (!inJavaDoc && symbolLine >= 0 && symbolLine < lines.length) {
+      // Check if there's JavaDoc right before
+      for (let i = symbolLine - 1; i >= Math.max(0, symbolLine - 5); i--) {
+        const line = lines[i].trim();
+        if (line.includes('/**')) {
+          // Found JavaDoc start, collect until */
+          for (let j = i; j < symbolLine && j < lines.length; j++) {
+            javaDocContent += lines[j] + '\n';
+            if (lines[j].includes('*/')) break;
+          }
           break;
         }
       }
@@ -250,6 +269,7 @@ export class DocumentationAnalyzer {
     return { hasJavaDoc: true, hasDescription, hasParams, hasReturn };
   }
 }
+
 
 
 

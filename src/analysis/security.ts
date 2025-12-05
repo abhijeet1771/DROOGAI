@@ -14,6 +14,8 @@ export interface SecurityIssue {
   message: string;
   suggestion: string;
   cwe?: string; // Common Weakness Enumeration
+  owaspCategory?: string; // OWASP Top 10 category
+  cvssScore?: number; // CVSS score (0-10)
 }
 
 export interface SecurityReport {
@@ -98,6 +100,9 @@ export class SecurityAnalyzer {
       issues.push({
         type: 'Hardcoded Secret',
         location: `line ${lineNumber}`,
+        owaspCategory: 'A07:2021 – Identification and Authentication Failures',
+        cvssScore: 7.5, // High severity
+        cwe: 'CWE-798',
         file: '', // Will be set by caller
         line: lineNumber,
         severity: 'critical',
@@ -119,6 +124,8 @@ export class SecurityAnalyzer {
         message: 'Hardcoded password detected',
         suggestion: 'Use environment variables or secure vault',
         cwe: 'CWE-798',
+        owaspCategory: 'A07:2021 – Identification and Authentication Failures',
+        cvssScore: 9.1, // Critical for passwords
       });
     }
 
@@ -173,6 +180,8 @@ export class SecurityAnalyzer {
         message: 'SQL query uses string concatenation - vulnerable to SQL injection',
         suggestion: 'Use parameterized queries (PreparedStatement) or ORM with parameter binding',
         cwe: 'CWE-89',
+        owaspCategory: 'A03:2021 – Injection',
+        cvssScore: 9.8, // Critical - SQL injection
       });
     }
 
@@ -212,6 +221,8 @@ export class SecurityAnalyzer {
         message: 'User input directly rendered without sanitization',
         suggestion: 'Escape HTML entities or use templating engine with auto-escaping',
         cwe: 'CWE-79',
+        owaspCategory: 'A03:2021 – Injection',
+        cvssScore: 7.2, // High - XSS
       });
     }
 
@@ -251,12 +262,15 @@ export class SecurityAnalyzer {
         message: 'Direct object access without authorization check',
         suggestion: 'Add authorization check before accessing resources',
         cwe: 'CWE-639',
+        owaspCategory: 'A01:2021 – Broken Access Control',
+        cvssScore: 7.5, // High - IDOR
       });
     }
 
     return issues;
   }
 }
+
 
 
 
