@@ -39,7 +39,30 @@ export interface ImpactAnalysis {
   impactedFeatures: ImpactedFeature[];
   callSites: ImpactedArea[];
   breakagePredictions: BreakagePrediction[];
+  cascadeFailures?: CascadeFailure[]; // Sprint 3.1: Cascade failure analysis
+  dependencyChains?: DependencyChain[]; // Sprint 3.1: Dependency chain analysis
   summary: string; // Human-readable summary
+}
+
+export interface CascadeFailure {
+  trigger: string; // The change that triggers the cascade
+  affectedFeatures: string[]; // Features that will break
+  affectedServices: string[]; // Services/microservices that will fail
+  chainLength: number; // How many levels deep the cascade goes
+  severity: 'high' | 'medium' | 'low';
+  description: string;
+}
+
+export interface DependencyChain {
+  rootChange: string; // The initial change
+  chain: Array<{
+    level: number;
+    file: string;
+    symbol: string;
+    reason: string;
+  }>;
+  totalAffected: number; // Total files affected in the chain
+  criticalPath: boolean; // Is this a critical path?
 }
 
 export class ImpactAnalyzer {
@@ -127,12 +150,20 @@ export class ImpactAnalyzer {
       impactedFeatures
     );
 
+    // Sprint 3.1: Analyze cascade failures
+    const cascadeFailures = this.analyzeCascadeFailures(changedSymbols, impactedAreas, impactedFeatures);
+    
+    // Sprint 3.1: Analyze dependency chains
+    const dependencyChains = this.analyzeDependencyChains(changedSymbols, impactedAreas, Array.from(impactedFilesSet));
+
     // Generate human-readable summary
     const summary = this.generateHumanReadableSummary(
       changedSymbols,
       impactedFilesSet,
       impactedFeatures,
-      breakagePredictions
+      breakagePredictions,
+      cascadeFailures,
+      dependencyChains
     );
 
     return {
@@ -141,6 +172,8 @@ export class ImpactAnalyzer {
       impactedFeatures,
       callSites: impactedAreas,
       breakagePredictions,
+      cascadeFailures,
+      dependencyChains,
       summary,
     };
   }
@@ -333,13 +366,145 @@ If no significant breakage is predicted, return an empty array: []`;
   }
 
   /**
+   * Analyze cascade failures (Sprint 3.1)
+   * Predicts chain reactions when one change breaks multiple features/services
+   */
+  private analyzeCascadeFailures(
+    changedSymbols: CodeSymbol[],
+    impactedAreas: ImpactedArea[],
+    impactedFeatures: ImpactedFeature[]
+  ): CascadeFailure[] {
+    const cascades: CascadeFailure[] = [];
+
+    // Group call sites by feature/service
+    const featureCallSites = new Map<string, ImpactedArea[]>();
+    for (const area of impactedAreas) {
+      const feature = area.feature || 'unknown';
+      if (!featureCallSites.has(feature)) {
+        featureCallSites.set(feature, []);
+      }
+      featureCallSites.get(feature)!.push(area);
+    }
+
+    // Detect cascades: if one change affects multiple features/services
+    for (const changedSymbol of changedSymbols) {
+      const affectedFeatures = Array.from(featureCallSites.keys());
+      const affectedServices = this.extractServicesFromCallSites(impactedAreas);
+
+      if (affectedFeatures.length > 1 || affectedServices.length > 1) {
+        const chainLength = this.calculateChainLength(changedSymbol, impactedAreas);
+        
+        cascades.push({
+          trigger: `${changedSymbol.file}::${changedSymbol.name}`,
+          affectedFeatures,
+          affectedServices,
+          chainLength,
+          severity: chainLength > 3 ? 'high' : chainLength > 2 ? 'medium' : 'low',
+          description: `Change in ${changedSymbol.name} will cascade to ${affectedFeatures.length} feature(s) and ${affectedServices.length} service(s)`,
+        });
+      }
+    }
+
+    return cascades;
+  }
+
+  /**
+   * Analyze dependency chains (Sprint 3.1)
+   * Maps how changes propagate through the dependency graph
+   */
+  private analyzeDependencyChains(
+    changedSymbols: CodeSymbol[],
+    impactedAreas: ImpactedArea[],
+    impactedFiles: string[]
+  ): DependencyChain[] {
+    const chains: DependencyChain[] = [];
+
+    for (const changedSymbol of changedSymbols) {
+      // Build dependency chain
+      const chain: DependencyChain['chain'] = [];
+      
+      // Direct call sites (level 1)
+      const directCallSites = impactedAreas.filter(area => 
+        area.file === changedSymbol.file || area.method.includes(changedSymbol.name)
+      );
+      
+      for (const area of directCallSites) {
+        chain.push({
+          level: 1,
+          file: area.file,
+          symbol: area.method,
+          reason: `Directly calls ${changedSymbol.name}`,
+        });
+      }
+
+      // Indirect impacts (level 2+)
+      const indirectFiles = impactedFiles.filter(f => 
+        !directCallSites.some(area => area.file === f)
+      );
+      
+      for (const file of indirectFiles) {
+        chain.push({
+          level: 2,
+          file,
+          symbol: 'unknown',
+          reason: `Depends on files that use ${changedSymbol.name}`,
+        });
+      }
+
+      if (chain.length > 0) {
+        chains.push({
+          rootChange: `${changedSymbol.file}::${changedSymbol.name}`,
+          chain,
+          totalAffected: chain.length,
+          criticalPath: chain.length > 5 || changedSymbol.name.toLowerCase().includes('service') || changedSymbol.name.toLowerCase().includes('api'),
+        });
+      }
+    }
+
+    return chains;
+  }
+
+  /**
+   * Extract service names from call sites
+   */
+  private extractServicesFromCallSites(impactedAreas: ImpactedArea[]): string[] {
+    const services = new Set<string>();
+    
+    for (const area of impactedAreas) {
+      // Look for service patterns in file path
+      if (area.file.includes('Service') || area.file.includes('service')) {
+        const serviceName = area.file.split('/').pop()?.replace(/\.(java|js|ts)$/, '') || '';
+        if (serviceName) {
+          services.add(serviceName);
+        }
+      }
+    }
+    
+    return Array.from(services);
+  }
+
+  /**
+   * Calculate cascade chain length
+   */
+  private calculateChainLength(changedSymbol: CodeSymbol, impactedAreas: ImpactedArea[]): number {
+    // Count how many levels of dependencies are affected
+    const direct = impactedAreas.filter(area => area.file === changedSymbol.file).length;
+    const indirect = impactedAreas.length - direct;
+    
+    // Chain length = direct (1) + indirect levels (estimated)
+    return 1 + Math.ceil(indirect / 3); // Rough estimate: every 3 indirect calls = 1 level
+  }
+
+  /**
    * Generate human-readable summary
    */
   private generateHumanReadableSummary(
     changedSymbols: CodeSymbol[],
     impactedFiles: Set<string>,
     features: ImpactedFeature[],
-    predictions: BreakagePrediction[]
+    predictions: BreakagePrediction[],
+    cascadeFailures?: CascadeFailure[],
+    dependencyChains?: DependencyChain[]
   ): string {
     let summary = `# Pre-Merge Impact Analysis\n\n`;
     
@@ -362,6 +527,41 @@ If no significant breakage is predicted, return an empty array: []`;
           });
           if (feature.impactedAreas.length > 10) {
             summary += `  ... and ${feature.impactedAreas.length - 10} more call site(s)\n`;
+          }
+          summary += `\n`;
+        }
+      }
+    }
+
+    // Sprint 3.1: Add cascade failure info
+    if (cascadeFailures && cascadeFailures.length > 0) {
+      summary += `## Cascade Failures\n\n`;
+      summary += `**${cascadeFailures.length} cascade failure(s)** detected - one change will break multiple features/services.\n\n`;
+      for (const cascade of cascadeFailures.slice(0, 3)) {
+        summary += `### ${cascade.trigger}\n`;
+        summary += `- **Affected Features:** ${cascade.affectedFeatures.join(', ') || 'None'}\n`;
+        summary += `- **Affected Services:** ${cascade.affectedServices.join(', ') || 'None'}\n`;
+        summary += `- **Chain Length:** ${cascade.chainLength} level(s)\n`;
+        summary += `- **Severity:** ${cascade.severity.toUpperCase()}\n`;
+        summary += `- **Description:** ${cascade.description}\n\n`;
+      }
+    }
+
+    // Sprint 3.1: Add dependency chain info
+    if (dependencyChains && dependencyChains.length > 0) {
+      const criticalChains = dependencyChains.filter(chain => chain.criticalPath);
+      if (criticalChains.length > 0) {
+        summary += `## Critical Dependency Chains\n\n`;
+        summary += `**${criticalChains.length} critical dependency chain(s)** detected.\n\n`;
+        for (const chain of criticalChains.slice(0, 2)) {
+          summary += `### ${chain.rootChange}\n`;
+          summary += `- **Total Affected:** ${chain.totalAffected} file(s)\n`;
+          summary += `- **Chain:**\n`;
+          chain.chain.slice(0, 5).forEach(link => {
+            summary += `  - Level ${link.level}: \`${link.file}\` - ${link.reason}\n`;
+          });
+          if (chain.chain.length > 5) {
+            summary += `  - ... and ${chain.chain.length - 5} more file(s)\n`;
           }
           summary += `\n`;
         }
