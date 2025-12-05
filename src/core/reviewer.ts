@@ -27,6 +27,8 @@ import { OrganizationAnalyzer, OrganizationReport } from '../analysis/organizati
 import { ContextDetector, ContextReport } from '../intelligence/context-detector.js';
 import { BusinessImpactMapper, BusinessImpactReport } from '../analysis/business-impact.js';
 import { RiskPrioritizer, RiskPrioritizationReport } from '../analysis/risk-prioritizer.js';
+import { PatternMemorySystem, PatternMemoryReport } from '../learning/pattern-memory.js';
+import { CodebaseKnowledgeEngine, CodebaseKnowledgeReport } from '../intelligence/codebase-knowledge.js';
 
 export interface EnterpriseReviewReport {
   prNumber: number;
@@ -160,6 +162,8 @@ export interface EnterpriseReviewReport {
   contextIntelligence?: ContextReport; // Sprint 2.2: Context-aware intelligence
   businessImpact?: BusinessImpactReport; // Sprint 3.2: Business impact mapping
   riskPrioritization?: RiskPrioritizationReport; // Sprint 3.3: Risk prioritization
+  patternMemory?: PatternMemoryReport; // Sprint 4.1: Pattern memory system
+  codebaseKnowledge?: CodebaseKnowledgeReport; // Sprint 4.2: Codebase knowledge engine
   prFlowValidation?: {
     issues: any[];
     unusedLocators: any[];
@@ -1306,6 +1310,69 @@ export class EnterpriseReviewer {
           summary += `${index + 1}. **\`${risk.file}\`** - ${risk.issue} (Risk Score: ${risk.riskScore}/100)\n`;
         });
         summary += `\n`;
+      }
+    }
+
+    // Pattern Memory (Sprint 4.1)
+    if (report.patternMemory && (report.patternMemory.similarBugs.length > 0 || report.patternMemory.similarReviews.length > 0 || report.patternMemory.suggestions.length > 0)) {
+      summary += `\n## 🧠 Pattern Memory (Historical Context)\n\n`;
+      summary += `${report.patternMemory.summary}\n\n`;
+      
+      if (report.patternMemory.similarBugs.length > 0) {
+        summary += `### Similar Bugs Found\n\n`;
+        report.patternMemory.similarBugs.slice(0, 3).forEach((bug: any, index: number) => {
+          summary += `${index + 1}. **${bug.pattern}** in \`${bug.file}\` (${bug.date})\n`;
+          summary += `   - **Description:** ${bug.description}\n`;
+          summary += `   - **Fix:** ${bug.fix}\n`;
+          if (bug.similarTo) {
+            summary += `   - **Similar to:** ${bug.similarTo}\n`;
+          }
+          summary += `\n`;
+        });
+      }
+
+      if (report.patternMemory.similarReviews.length > 0) {
+        summary += `### Similar Reviews\n\n`;
+        report.patternMemory.similarReviews.slice(0, 2).forEach((review: any, index: number) => {
+          summary += `${index + 1}. **PR #${review.prNumber}** (${review.date}) - ${review.outcome.toUpperCase()}\n`;
+          summary += `   - **Issues:** ${review.issues.join(', ')}\n`;
+          summary += `\n`;
+        });
+      }
+
+      if (report.patternMemory.suggestions.length > 0) {
+        summary += `### Suggestions Based on History\n\n`;
+        report.patternMemory.suggestions.slice(0, 5).forEach((suggestion: string, index: number) => {
+          summary += `${index + 1}. ${suggestion}\n`;
+        });
+        summary += `\n`;
+      }
+    }
+
+    // Codebase Knowledge (Sprint 4.2)
+    if (report.codebaseKnowledge && report.codebaseKnowledge.suggestions.length > 0) {
+      summary += `\n## 💡 Codebase Knowledge (Reuse Opportunities)\n\n`;
+      summary += `${report.codebaseKnowledge.summary}\n\n`;
+      
+      if (report.codebaseKnowledge.reusableMethods.length > 0) {
+        summary += `### Reusable Methods\n\n`;
+        report.codebaseKnowledge.reusableMethods.slice(0, 5).forEach((suggestion: any, index: number) => {
+          summary += `${index + 1}. **\`${suggestion.element}\`** in \`${suggestion.file}\`\n`;
+          summary += `   - **Suggestion:** ${suggestion.suggestion}\n`;
+          summary += `   - **Existing:** \`${suggestion.existingLocation}\`\n`;
+          if (suggestion.similarity) {
+            summary += `   - **Similarity:** ${(suggestion.similarity * 100).toFixed(0)}%\n`;
+          }
+          summary += `\n`;
+        });
+      }
+
+      if (report.codebaseKnowledge.reusableUtilities.length > 0) {
+        summary += `### Reusable Utilities\n\n`;
+        report.codebaseKnowledge.reusableUtilities.slice(0, 3).forEach((suggestion: any, index: number) => {
+          summary += `${index + 1}. **${suggestion.element}** - ${suggestion.suggestion}\n`;
+          summary += `   - **Location:** \`${suggestion.existingLocation}\`\n\n`;
+        });
       }
     }
     
