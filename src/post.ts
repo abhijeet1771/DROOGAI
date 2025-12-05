@@ -40,21 +40,17 @@ export class CommentPoster {
     }
 
     // Post comments with rate limiting
+    // Post ALL comments as inline comments (not just high/critical)
     for (const [file, fileComments] of commentsByFile) {
-      // For each file, post a summary comment or individual comments
       // GitHub API limits: 50 comments per PR review
-      // We'll post high severity issues as individual comments
-      // Handle both normalized (high) and original (critical) severity values
-      const highSeverityComments = fileComments.filter((c) => {
-        const sev = (c.severity || '').toLowerCase();
-        return sev === 'high' || sev === 'critical';
-      });
+      // Post all comments as inline comments (up to 50 per file to be safe)
+      const commentsToPost = fileComments.slice(0, 50);
       
-      if (highSeverityComments.length > 0) {
-        console.log(`  📌 Found ${highSeverityComments.length} high/critical severity comment(s) for ${file} - posting as inline comments...`);
+      if (commentsToPost.length > 0) {
+        console.log(`  📌 Found ${commentsToPost.length} comment(s) for ${file} - posting as inline comments...`);
       }
       
-      for (const comment of highSeverityComments.slice(0, 10)) {
+      for (const comment of commentsToPost) {
         try {
           console.log(`  📤 Attempting to post inline comment on ${comment.file}:${comment.line}...`);
           await this.github.postReviewComment(
@@ -77,27 +73,6 @@ export class CommentPoster {
             console.error(`     Status: ${error.response.status}`);
             console.error(`     Response: ${JSON.stringify(error.response.data)}`);
           }
-        }
-      }
-
-      // Post remaining comments as a summary in PR comment
-      // Exclude high/critical severity (already posted as inline)
-      const remainingComments = fileComments.filter((c) => {
-        const sev = (c.severity || '').toLowerCase();
-        return sev !== 'high' && sev !== 'critical';
-      });
-      if (remainingComments.length > 0) {
-        const summary = this.formatSummaryComment(file, remainingComments);
-        // Only post summary if it has content (not empty)
-        if (summary.trim().length > 0 && summary !== `## Review Summary for \`${file}\`\n\n`) {
-          try {
-            await this.github.postComment(this.owner, this.repo, this.prNumber, summary);
-            console.log(`  ✓ Posted summary for ${file}`);
-          } catch (error) {
-            console.error(`  ✗ Failed to post summary for ${file}`, error);
-          }
-        } else {
-          console.log(`  ⚠️  Skipping empty summary for ${file} (all comments were posted as inline)`);
         }
       }
     }
