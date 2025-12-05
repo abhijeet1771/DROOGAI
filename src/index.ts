@@ -279,6 +279,11 @@ async function runEnterpriseReview(owner: string, repo: string, prNumber: number
     if (post) {
       const poster = new CommentPoster(github, owner, repo, prNumber, prData.head.sha);
       await poster.postComments(report.comments);
+      
+      // Post consolidated PR-level summary (not per-file)
+      if (report.summary) {
+        await poster.postSummary(report.summary);
+      }
     }
 
     console.log('✅ Enterprise review complete!\n');

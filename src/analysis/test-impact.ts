@@ -153,7 +153,7 @@ export class TestImpactAnalyzer {
            filepath.includes('spec') ||
            filepath.endsWith('Test.java') ||
            filepath.endsWith('Tests.java') ||
-           filepath.match(/\.test\.(js|ts|py)$/);
+           !!filepath.match(/\.test\.(js|ts|py)$/);
   }
 
   /**

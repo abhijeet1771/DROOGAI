@@ -135,7 +135,7 @@ export class PatternDetector {
           s.type === 'method' &&
           s.file === symbol.file &&
           (s.name.toLowerCase().includes('getinstance') || s.name.toLowerCase().includes('get')) &&
-          s.static === true
+          s.isStatic === true
         );
 
         if (classMethods.length > 0 && getInstanceMethods.length > 0) {
@@ -275,7 +275,7 @@ export class PatternDetector {
         );
 
         const classFields = symbols.filter(s =>
-          s.type === 'field' &&
+          (s.type === 'variable' || s.type === 'method') &&
           s.file === symbol.file
         );
 

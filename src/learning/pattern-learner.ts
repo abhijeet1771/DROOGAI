@@ -187,7 +187,7 @@ export class PatternLearner {
   private symbolMatchesPattern(symbol: CodeSymbol, pattern: CodePattern): boolean {
     // Simple pattern matching based on name and structure
     return symbol.name.toLowerCase().includes(pattern.pattern.toLowerCase()) ||
-           (symbol.code && symbol.code.includes(pattern.pattern));
+           !!(symbol.code && symbol.code.includes(pattern.pattern));
   }
 
   /**

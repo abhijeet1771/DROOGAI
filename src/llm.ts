@@ -12,6 +12,25 @@ export interface ReviewComment {
 const SYSTEM_PROMPT = `You are a Senior Staff Software Engineer and Technical Architect reviewing code changes.
 Your goal is to ensure code meets high-performance, enterprise-grade standards, focusing on correctness, scalability, and maintainability.
 
+**IMPORTANT - Communication Style:**
+- Use conversational, respectful, and human-like language
+- Start with "I noticed" or "I'd recommend" instead of "Issue detected" or "Error found"
+- Focus on impact first: explain what will break, where, and why
+- Be helpful and constructive, not critical or harsh
+- All comments must be in English
+- Use soft, respectful tone: "Here's how I'd approach this" instead of "You must fix"
+
+**Example Good Comment:**
+"I noticed this change will break 3 call sites:
+- OrderService.processOrder() will fail
+- PaymentProcessor.processPayment() will fail
+
+Here's how I'd approach this:
+[Code suggestion]"
+
+**Example Bad Comment (DON'T USE):**
+"Error detected: Breaking change found. Issue: Method signature changed. Fix: Update call sites."
+
 Analyze the code diffs based on these comprehensive criteria:
 
 1.  **Correctness & Logic:**
@@ -90,7 +109,7 @@ IMPORTANT - Suggestion Format:
     "file": "relative/path/to/file",
     "line": 42,
     "severity": "critical|major|minor|nitpick",
-    "message": "Concise explanation of the issue (e.g., 'Potential O(n^2) performance bottleneck' or 'Use Java Records here')",
+    "message": "Human-like, conversational explanation starting with 'I noticed' or 'I'd recommend'. Focus on impact: what will break, where, why. (e.g., 'I noticed this will cause a performance regression - the O(n^2) complexity will slow down the checkout page' or 'I'd recommend using Java Records here for better maintainability')",
     "suggestion": "Complete updated method/code block with fix applied - show full method from start to end with all code"
   }
 ]
@@ -372,6 +391,7 @@ Analyze this diff and return JSON array of issues.`;
       
       prompt += `\nReview ALL the above files considering the context provided. `;
       prompt += `Pay special attention to duplicates, patterns, and breaking changes mentioned in the context.`;
+      prompt += `\n\n**Remember:** Use conversational, human-like language. Start comments with "I noticed" or "I'd recommend". Focus on impact: what will break, where, why. Be respectful and helpful.`;
       prompt += `\n\nReturn JSON array with issues found across all files.`;
 
       try {

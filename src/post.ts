@@ -92,31 +92,142 @@ export class CommentPoster {
         }
       }
       
-      // Post medium/low as summary comment
-      if (mediumLowComments.length > 0) {
-        const summary = this.formatSummaryComment(file, mediumLowComments);
-        if (summary.trim().length > 0 && summary !== `## Review Summary for \`${file}\`\n\n`) {
-          try {
-            await this.github.postComment(this.owner, this.repo, this.prNumber, summary);
-            console.log(`  ✓ Posted summary for ${file} (${mediumLowComments.length} medium/low issues)`);
-          } catch (error) {
-            console.error(`  ✗ Failed to post summary for ${file}`, error);
-          }
-        }
-      }
+      // REMOVED: Per-file summary comments
+      // We now only post consolidated PR-level summary (handled separately)
+      // No per-file summaries to avoid clutter
     }
 
     console.log('\n✓ Finished posting comments.');
   }
 
+  /**
+   * Post consolidated PR-level summary (not per-file)
+   */
+  async postSummary(summary: string): Promise<void> {
+    if (!summary || summary.trim().length === 0) {
+      console.log('\n✓ No summary to post.');
+      return;
+    }
+
+    try {
+      console.log('\n📤 Posting consolidated PR summary...');
+      await this.github.postComment(this.owner, this.repo, this.prNumber, summary);
+      console.log('✓ Posted consolidated PR summary');
+    } catch (error: any) {
+      console.error('✗ Failed to post summary:', error.message || error);
+    }
+  }
+
   private formatComment(comment: ReviewComment): string {
-    // Normalize severity for display
-    const sev = (comment.severity || '').toLowerCase();
-    const displaySeverity = sev === 'critical' ? 'HIGH' : 
-                           sev === 'major' ? 'MEDIUM' :
-                           sev === 'minor' ? 'LOW' :
-                           comment.severity.toUpperCase();
-    return `**${displaySeverity}**: ${comment.message}\n\n**Suggestion**:\n\`\`\`java\n${comment.suggestion}\n\`\`\``;
+    // Human-like, conversational format with impact-first structure
+    return this.formatHumanLikeComment(comment);
+  }
+
+  /**
+   * Format comment in human-like, conversational style
+   * Structure: Impact explanation → Human suggestion → Code example
+   */
+  private formatHumanLikeComment(comment: ReviewComment): string {
+    const message = comment.message || '';
+    const suggestion = comment.suggestion || '';
+    
+    // Extract impact information from message
+    const impactExplanation = this.extractImpactExplanation(message, comment);
+    
+    // Build human-like comment
+    let formatted = '';
+    
+    // 1. Impact explanation (what/where/why)
+    if (impactExplanation.callSites && impactExplanation.callSites.length > 0) {
+      formatted += `I noticed this change will break ${impactExplanation.callSites.length} call site(s):\n\n`;
+      impactExplanation.callSites.slice(0, 5).forEach((site: string) => {
+        formatted += `- ${site} will fail\n`;
+      });
+      if (impactExplanation.callSites.length > 5) {
+        formatted += `- ... and ${impactExplanation.callSites.length - 5} more location(s)\n`;
+      }
+      formatted += `\n`;
+    } else if (impactExplanation.impact) {
+      formatted += `I noticed ${impactExplanation.impact}\n\n`;
+    } else {
+      // Fallback to original message but in conversational tone
+      formatted += `I noticed ${this.makeConversational(message)}\n\n`;
+    }
+    
+    // 2. Human suggestion (respectful, soft)
+    if (suggestion) {
+      formatted += `Here's how I'd approach this:\n\n`;
+      formatted += `\`\`\`java\n${suggestion}\n\`\`\`\n`;
+    }
+    
+    return formatted;
+  }
+
+  /**
+   * Extract impact information from comment
+   */
+  private extractImpactExplanation(message: string, comment: ReviewComment): {
+    impact?: string;
+    callSites?: string[];
+  } {
+    const lowerMessage = message.toLowerCase();
+    
+    // Check for breaking change indicators
+    if (lowerMessage.includes('breaking change') || 
+        lowerMessage.includes('signature changed') ||
+        lowerMessage.includes('visibility reduced') ||
+        lowerMessage.includes('return type changed')) {
+      
+      // Try to extract call sites from comment metadata if available
+      const callSites: string[] = [];
+      if ((comment as any).callSites) {
+        callSites.push(...(comment as any).callSites);
+      }
+      
+      return {
+        impact: `this is a breaking change that will cause compilation or runtime failures`,
+        callSites: callSites.length > 0 ? callSites : undefined,
+      };
+    }
+    
+    // Check for test failure indicators
+    if (lowerMessage.includes('test will fail') || 
+        lowerMessage.includes('test case')) {
+      return {
+        impact: `this test will fail when the PR is merged`,
+      };
+    }
+    
+    // Check for performance indicators
+    if (lowerMessage.includes('performance') || 
+        lowerMessage.includes('slow') ||
+        lowerMessage.includes('regression')) {
+      return {
+        impact: `this will cause a performance regression`,
+      };
+    }
+    
+    return {};
+  }
+
+  /**
+   * Convert technical message to conversational tone
+   */
+  private makeConversational(message: string): string {
+    let conversational = message;
+    
+    // Replace technical terms with conversational ones
+    conversational = conversational.replace(/Issue detected:/gi, '');
+    conversational = conversational.replace(/Error found:/gi, '');
+    conversational = conversational.replace(/Problem:/gi, '');
+    conversational = conversational.replace(/Warning:/gi, '');
+    
+    // Make it sound more natural
+    if (!conversational.toLowerCase().startsWith('this')) {
+      conversational = `this ${conversational.toLowerCase()}`;
+    }
+    
+    return conversational.trim();
   }
 
   private formatSummaryComment(file: string, comments: ReviewComment[]): string {

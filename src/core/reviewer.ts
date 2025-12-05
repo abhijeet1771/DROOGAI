@@ -813,8 +813,15 @@ export class EnterpriseReviewer {
   }
   
   private generateSummary(report: EnterpriseReviewReport): string {
-    let summary = `# ⚠️ Pre-Merge Risk Assessment\n\n`;
-    summary += `**Developer Note:** This PR may seem like a small change, but here's what could break:\n\n`;
+    // Consolidated PR-level summary (not per-file)
+    let summary = `# ⚠️ PR Impact Assessment\n\n`;
+    
+    // Calculate merge risk
+    const riskLevel = this.calculateMergeRisk(report);
+    summary += `**Merge Risk**: ${riskLevel}\n\n`;
+    
+    // Impact on main branch
+    summary += `**If merged, main branch will experience:**\n\n`;
     
     // RISK-FOCUSED SUMMARY: What will break?
     
@@ -906,93 +913,100 @@ export class EnterpriseReviewer {
       });
     }
 
-    // 5. Summary of What Will Break
-    summary += `\n## 📋 Summary: What Will Break?\n\n`;
-    
-    const willBreak: string[] = [];
-    if (report.impactAnalysis && report.impactAnalysis.impactedFiles.length > 0) {
-      willBreak.push(`${report.impactAnalysis.impactedFiles.length} file(s) will be affected`);
+    // Build impact list
+    const impacts: string[] = [];
+    if (report.impactAnalysis && report.impactAnalysis.impactedFeatures.length > 0) {
+      impacts.push(`**${report.impactAnalysis.impactedFeatures.length} feature(s)** will break`);
     }
     if (report.testImpact && report.testImpact.failingTests.length > 0) {
-      willBreak.push(`${report.testImpact.failingTests.length} test case(s) will fail`);
-    }
-    if (report.breakingChanges && report.breakingChanges.count > 0) {
-      willBreak.push(`${report.breakingChanges.count} breaking change(s) will cause compilation/runtime failures`);
+      impacts.push(`**${report.testImpact.failingTests.length} test(s)** will fail (CI blocked)`);
     }
     if (report.performanceRegression && report.performanceRegression.regressions.length > 0) {
-      willBreak.push(`${report.performanceRegression.regressions.length} performance regression(s) will slow down the code`);
-    }
-    
-    if (willBreak.length > 0) {
-      summary += `**⚠️ This PR will cause the following issues:**\n\n`;
-      willBreak.forEach((item, index) => {
-        summary += `${index + 1}. ${item}\n`;
-      });
-      summary += `\n`;
-    } else {
-      summary += `**✅ No major breakage detected** - this PR appears safe to merge.\n\n`;
-    }
-    
-    // Action Items
-    summary += `## 🎯 Action Items Before Merge\n\n`;
-    summary += `1. **Review all affected files** listed above\n`;
-    if (report.testImpact && report.testImpact.failingTests.length > 0) {
-      summary += `2. **Fix failing tests** - ${report.testImpact.failingTests.length} test(s) will fail\n`;
+      impacts.push(`**${report.performanceRegression.regressions.length} performance regression(s)** detected`);
     }
     if (report.breakingChanges && report.breakingChanges.count > 0) {
-      summary += `3. **Update calling code** - ${report.breakingChanges.count} breaking change(s) need fixes\n`;
+      impacts.push(`**${report.breakingChanges.count} breaking change(s)** affecting ${report.breakingChanges.impactedFiles.length} file(s)`);
     }
-    if (report.impactAnalysis && report.impactAnalysis.impactedFiles.length > 0) {
-      summary += `4. **Test affected features** - ${report.impactAnalysis.impactedFeatures.length} feature(s) at risk\n`;
-    }
-    summary += `5. **Run full test suite** before merging\n`;
-    summary += `6. **Consider creating a migration guide** if breaking changes are intentional\n\n`;
     
-    // Locator Suggestions
-    if (report.locatorSuggestions && report.locatorSuggestions.suggestions.length > 0) {
-      summary += `\n## 🎯 Test Automation: Locator Improvements\n\n`;
-      summary += `**Framework:** ${report.locatorSuggestions.framework}\n`;
-      summary += `**${report.locatorSuggestions.totalIssues} locator improvement(s) suggested**\n\n`;
-      
-      report.locatorSuggestions.suggestions.slice(0, 5).forEach((suggestion: any, index: number) => {
-        summary += `${index + 1}. **\`${suggestion.file}:${suggestion.line}\`** (${suggestion.priority.toUpperCase()} priority)\n`;
-        summary += `   - **Current:** \`${suggestion.currentLocator}\`\n`;
-        summary += `   - **Suggested:** \`${suggestion.suggestedLocator}\`\n`;
-        summary += `   - **Reason:** ${suggestion.reason}\n`;
-        summary += `   - **Example:**\n\`\`\`\n${suggestion.example}\n\`\`\`\n\n`;
+    if (impacts.length > 0) {
+      impacts.forEach(impact => {
+        summary += `- ${impact}\n`;
       });
+    } else {
+      summary += `- ✅ No major breakage detected\n`;
     }
-
-    // Gherkin Improvements
-    if (report.gherkinSuggestions && report.gherkinSuggestions.suggestions.length > 0) {
-      summary += `\n## 📝 Test Automation: Gherkin/Feature File Improvements\n\n`;
-      summary += `**Readability Score:** ${report.gherkinSuggestions.readabilityScore}/100\n`;
-      summary += `**${report.gherkinSuggestions.totalIssues} improvement(s) suggested**\n\n`;
-      
-      report.gherkinSuggestions.suggestions.slice(0, 5).forEach((suggestion: any, index: number) => {
-        summary += `${index + 1}. **\`${suggestion.file}:${suggestion.line}\`** (${suggestion.type}, ${suggestion.priority.toUpperCase()} priority)\n`;
-        summary += `   - **Current:** \`${suggestion.currentText}\`\n`;
-        summary += `   - **Suggested:** \`${suggestion.suggestedText}\`\n`;
-        summary += `   - **Reason:** ${suggestion.reason}\n\n`;
+    
+    summary += `\n`;
+    
+    // Must fix before merge (priority list)
+    const mustFix: Array<{ priority: string; issue: string; impact: string }> = [];
+    
+    if (report.breakingChanges && report.breakingChanges.count > 0) {
+      const topBreakingChange = report.breakingChanges.details[0];
+      mustFix.push({
+        priority: '🔴 HIGH',
+        issue: `Breaking change in ${topBreakingChange.file}::${topBreakingChange.symbol}`,
+        impact: `${report.breakingChanges.impactedFiles.length} file(s) will break`
       });
     }
     
-    // Reviewer Suggestions (keep this)
+    if (report.testImpact && report.testImpact.failingTests.length > 0) {
+      mustFix.push({
+        priority: '🔴 HIGH',
+        issue: `Update ${report.testImpact.failingTests.length} failing test(s)`,
+        impact: 'CI pipeline will fail'
+      });
+    }
+    
+    if (report.performanceRegression && report.performanceRegression.regressions.length > 0) {
+      const topRegression = report.performanceRegression.regressions[0];
+      mustFix.push({
+        priority: '🟡 MEDIUM',
+        issue: `Performance regression in ${topRegression.file}::${topRegression.method}`,
+        impact: topRegression.estimatedSlowdown
+      });
+    }
+    
+    if (report.impactAnalysis && report.impactAnalysis.impactedFeatures.length > 0) {
+      const topFeature = report.impactAnalysis.impactedFeatures[0];
+      mustFix.push({
+        priority: '🔴 HIGH',
+        issue: `Fix ${topFeature.name} feature`,
+        impact: `${topFeature.files.length} file(s) affected`
+      });
+    }
+    
+    if (mustFix.length > 0) {
+      summary += `## Must Fix Before Merge (Priority Order):\n\n`;
+      mustFix.slice(0, 5).forEach((item, index) => {
+        summary += `${index + 1}. ${item.priority} **${item.issue}**\n`;
+        summary += `   - ${item.impact}\n\n`;
+      });
+    }
+    
+    // Quick stats
+    summary += `## Quick Stats:\n\n`;
+    summary += `- **Total Issues**: ${report.totalIssues}\n`;
+    summary += `- **High Priority**: ${report.issuesBySeverity.high}\n`;
+    summary += `- **Medium Priority**: ${report.issuesBySeverity.medium}\n`;
+    summary += `- **Low Priority**: ${report.issuesBySeverity.low}\n\n`;
+    
+    // Additional context (only if critical)
+    if (report.locatorSuggestions && report.locatorSuggestions.totalIssues > 10) {
+      summary += `\n**Note:** ${report.locatorSuggestions.totalIssues} test automation improvements suggested (see inline comments)\n\n`;
+    }
+    
+    if (report.gherkinSuggestions && report.gherkinSuggestions.totalIssues > 10) {
+      summary += `**Note:** ${report.gherkinSuggestions.totalIssues} Gherkin improvements suggested (see inline comments)\n\n`;
+    }
+    
+    // Reviewer Suggestions (keep this - helpful for PR)
     if (report.reviewerSuggestions && report.reviewerSuggestions.length > 0) {
       summary += `## 👥 Suggested Reviewers\n\n`;
-      summary += `**Who should review this?** (based on code ownership):\n\n`;
-      report.reviewerSuggestions.forEach((suggestion: any) => {
-        summary += `- **@${suggestion.reviewer}** (${(suggestion.confidence * 100).toFixed(0)}% confidence)\n`;
-        summary += `  - Reason: ${suggestion.reason}\n`;
-        summary += `  - Expertise: ${suggestion.expertise.join(', ')}\n\n`;
+      report.reviewerSuggestions.slice(0, 3).forEach((suggestion: any) => {
+        summary += `- **@${suggestion.reviewer}** (${(suggestion.confidence * 100).toFixed(0)}% confidence) - ${suggestion.expertise[0] || 'General'}\n`;
       });
-    }
-    
-    if (report.duplicates && report.duplicates.withinPR > 0) {
-      summary += `**Duplicates Found:** ${report.duplicates.withinPR} within PR\n`;
-      if (report.duplicates.crossRepo > 0) {
-        summary += `**Cross-Repo Duplicates:** ${report.duplicates.crossRepo} found\n`;
-      }
+      summary += `\n`;
     }
     
     // Skip traditional code review sections - focus only on what will break
@@ -1275,6 +1289,41 @@ export class EnterpriseReviewer {
     }
     
     return summary;
+  }
+
+  /**
+   * Calculate merge risk level
+   */
+  private calculateMergeRisk(report: EnterpriseReviewReport): string {
+    let riskScore = 0;
+    
+    // Breaking changes = high risk
+    if (report.breakingChanges && report.breakingChanges.count > 0) {
+      riskScore += report.breakingChanges.count * 30;
+    }
+    
+    // Failing tests = high risk
+    if (report.testImpact && report.testImpact.failingTests.length > 0) {
+      riskScore += report.testImpact.failingTests.length * 20;
+    }
+    
+    // Impacted features = high risk
+    if (report.impactAnalysis && report.impactAnalysis.impactedFeatures.length > 0) {
+      riskScore += report.impactAnalysis.impactedFeatures.length * 25;
+    }
+    
+    // Performance regressions = medium risk
+    if (report.performanceRegression && report.performanceRegression.regressions.length > 0) {
+      riskScore += report.performanceRegression.regressions.length * 10;
+    }
+    
+    // High severity issues = medium risk
+    riskScore += report.issuesBySeverity.high * 15;
+    
+    if (riskScore >= 100) return '🔴 HIGH ⚠️';
+    if (riskScore >= 50) return '🟡 MEDIUM ⚠️';
+    if (riskScore >= 20) return '🟢 LOW';
+    return '✅ SAFE';
   }
 
   /**

@@ -108,7 +108,6 @@ export class SecurityAnalyzer {
         severity: 'critical',
         message: 'Hardcoded API key detected',
         suggestion: 'Move to environment variables or secure configuration',
-        cwe: 'CWE-798',
       });
     }
 
