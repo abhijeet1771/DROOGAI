@@ -532,6 +532,14 @@ export class EnterpriseReviewer {
         metricsIssues: observabilityReport.metricsIssues,
         missingErrorLogging: observabilityReport.missingErrorLogging,
       },
+      impactAnalysis: {
+        changedSymbols: impactAnalysis.changedSymbols,
+        impactedFiles: impactAnalysis.impactedFiles,
+        impactedFeatures: impactAnalysis.impactedFeatures,
+        callSites: impactAnalysis.callSites,
+        breakagePredictions: impactAnalysis.breakagePredictions,
+        summary: impactAnalysis.summary,
+      },
     };
     
     // All analysis already done in Phase 0, now just run architecture rules
