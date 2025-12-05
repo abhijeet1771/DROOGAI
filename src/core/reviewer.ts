@@ -505,6 +505,37 @@ export class EnterpriseReviewer {
     
     console.log('\n✓ Context built! Starting AI review with full context...\n');
     
+    // Locator & Gherkin Improvements Analysis
+    console.log('📋 Phase 0.20: Locator & Gherkin Improvements...');
+    const { LocatorSuggestionAnalyzer } = await import('../analysis/locator-suggestions.js');
+    const { GherkinImprovementAnalyzer } = await import('../analysis/gherkin-improvements.js');
+    const locatorAnalyzer = new LocatorSuggestionAnalyzer();
+    const gherkinAnalyzer = new GherkinImprovementAnalyzer();
+    
+    let locatorSuggestions: any[] = [];
+    let gherkinSuggestions: any[] = [];
+    
+    for (const [filepath, code] of prFileContents.entries()) {
+      // Check if it's a test file
+      if (filepath.includes('test') || filepath.includes('spec') || filepath.includes('.feature')) {
+        // Analyze locators
+        const locatorAnalysis = locatorAnalyzer.analyzeLocators(code, filepath);
+        if (locatorAnalysis.suggestions.length > 0) {
+          locatorSuggestions.push(...locatorAnalysis.suggestions);
+        }
+        
+        // Analyze Gherkin/feature files
+        if (filepath.endsWith('.feature') || filepath.includes('feature') || filepath.includes('step')) {
+          const gherkinAnalysis = gherkinAnalyzer.analyzeGherkin(code, filepath);
+          if (gherkinAnalysis.suggestions.length > 0) {
+            gherkinSuggestions.push(...gherkinAnalysis.suggestions);
+          }
+        }
+      }
+    }
+    
+    console.log(`✓ Found ${locatorSuggestions.length} locator improvement(s), ${gherkinSuggestions.length} Gherkin improvement(s)`);
+    
     // Phase 1: Basic review with FULL CONTEXT
     console.log('📋 Phase 1: AI Review (with Full Context)...');
     const basicReport = await this.reviewProcessor.processPR(prData, reviewContext);
