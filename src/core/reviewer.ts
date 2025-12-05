@@ -699,6 +699,49 @@ export class EnterpriseReviewer {
     }
     summary += `- Low: ${report.issuesBySeverity.low}\n\n`;
     
+    // Add Pre-Merge Impact Analysis section
+    if (report.impactAnalysis && report.impactAnalysis.impactedFiles.length > 0) {
+      summary += `\n## ⚠️ Pre-Merge Impact Analysis\n\n`;
+      summary += `**This PR will impact ${report.impactAnalysis.impactedFiles.length} file(s) before merge.**\n\n`;
+      
+      if (report.impactAnalysis.impactedFeatures.length > 0) {
+        summary += `### Impacted Features\n\n`;
+        report.impactAnalysis.impactedFeatures.forEach((feature: any) => {
+          summary += `**${feature.name}** (${feature.riskLevel.toUpperCase()} Risk)\n`;
+          summary += `- ${feature.files.length} file(s) affected\n`;
+          summary += `- ${feature.impactedAreas.length} call site(s) found\n`;
+          summary += `- ${feature.description}\n\n`;
+          
+          if (feature.impactedAreas.length > 0) {
+            summary += `**Where it's being called:**\n`;
+            feature.impactedAreas.slice(0, 5).forEach((area: any) => {
+              summary += `  - \`${area.method}()\` in \`${area.file}:${area.line}\`\n`;
+            });
+            if (feature.impactedAreas.length > 5) {
+              summary += `  ... and ${feature.impactedAreas.length - 5} more\n`;
+            }
+            summary += `\n`;
+          }
+        });
+      }
+      
+      if (report.impactAnalysis.breakagePredictions.length > 0) {
+        summary += `### 🚨 Potential Breakage Predictions\n\n`;
+        report.impactAnalysis.breakagePredictions.forEach((pred: any) => {
+          summary += `**${pred.scenario}** (${pred.probability.toUpperCase()} Probability)\n`;
+          summary += `- **Impact:** ${pred.impact}\n`;
+          summary += `- **Affected:** ${pred.affectedFiles.length} file(s)\n`;
+          summary += `- **Mitigation:** ${pred.mitigation}\n\n`;
+        });
+      }
+      
+      summary += `### 📋 Recommendations\n\n`;
+      summary += `1. Review all call sites listed above before merging\n`;
+      summary += `2. Run full test suite to catch any breakage\n`;
+      summary += `3. Update calling code if method signatures have changed\n`;
+      summary += `4. Consider deprecation for public APIs instead of breaking changes\n\n`;
+    }
+    
     if (report.duplicates && report.duplicates.withinPR > 0) {
       summary += `**Duplicates Found:** ${report.duplicates.withinPR} within PR\n`;
       if (report.duplicates.crossRepo > 0) {
