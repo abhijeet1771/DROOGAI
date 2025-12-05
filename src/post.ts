@@ -140,9 +140,9 @@ export class CommentPoster {
     // Build human-like comment
     let formatted = '';
     
-    // 1. Impact explanation (what/where/why)
+    // 1. Impact explanation (what/where/why) - Let LLM's natural message be used
     if (impactExplanation.callSites && impactExplanation.callSites.length > 0) {
-      formatted += `I noticed this change will break ${impactExplanation.callSites.length} call site(s):\n\n`;
+      formatted += `This change will break ${impactExplanation.callSites.length} call site(s):\n\n`;
       impactExplanation.callSites.slice(0, 5).forEach((site: string) => {
         formatted += `- ${site} will fail\n`;
       });
@@ -150,11 +150,9 @@ export class CommentPoster {
         formatted += `- ... and ${impactExplanation.callSites.length - 5} more location(s)\n`;
       }
       formatted += `\n`;
-    } else if (impactExplanation.impact) {
-      formatted += `I noticed ${impactExplanation.impact}\n\n`;
     } else {
-      // Fallback to original message but in conversational tone
-      formatted += `${this.makeConversational(message)}\n\n`;
+      // Use LLM's original message directly (already conversational and natural)
+      formatted += `${this.fixGrammarAndFormatting(message)}\n\n`;
     }
     
     // 2. Human suggestion (respectful, soft)
@@ -175,13 +173,13 @@ export class CommentPoster {
     }
 
     // 1. Fix incomplete sentences like "I noticed this." followed by another sentence
-    // "I noticed this. I'd recommend..." -> "I noticed an issue. I'd recommend..."
+    // "I noticed this. I'd recommend..." -> Remove the incomplete part or make it natural
     text = text.replace(/\bi\s+noticed\s+this\.\s+/gi, (match) => {
       // Check if next word starts a new sentence (capital letter)
       const afterMatch = text.substring(text.indexOf(match) + match.length);
       if (afterMatch.trim().length > 0 && /^[A-Z]/.test(afterMatch.trim())) {
-        // It's an incomplete sentence, make it more natural
-        return "I noticed an issue. ";
+        // It's an incomplete sentence - just remove it, let the next sentence stand alone
+        return "";
       }
       return "I noticed this. ";
     });
@@ -247,9 +245,9 @@ export class CommentPoster {
     text = text.replace(/\bis\s+is\b/gi, 'is');
 
     // 16. Fix awkward "I noticed this." at the start if it's incomplete
-    // If text starts with "I noticed this." and next sentence starts with capital, make it more natural
+    // If text starts with "I noticed this." and next sentence starts with capital, remove the incomplete part
     if (/^I\s+noticed\s+this\.\s+[A-Z]/.test(text)) {
-      text = text.replace(/^I\s+noticed\s+this\.\s+/, 'I noticed an issue. ');
+      text = text.replace(/^I\s+noticed\s+this\.\s+/, '');
     }
 
     return text.trim();
