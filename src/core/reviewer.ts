@@ -24,6 +24,7 @@ import { TestAutomationAnalyzer, TestAutomationReport } from '../analysis/test-a
 import { TechnicalDebtAnalyzer, TechnicalDebtReport } from '../analysis/technical-debt.js';
 import { MigrationSafetyAnalyzer, MigrationSafetyReport } from '../analysis/migration-safety.js';
 import { OrganizationAnalyzer, OrganizationReport } from '../analysis/organization.js';
+import { ContextDetector, ContextReport } from '../intelligence/context-detector.js';
 
 export interface EnterpriseReviewReport {
   prNumber: number;
