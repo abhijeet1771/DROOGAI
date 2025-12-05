@@ -1,5 +1,6 @@
 import { GitHubClient } from './github.js';
 import { ReviewComment } from './llm.js';
+import { AutoFix } from './ai/auto-fix-generator.js';
 
 export class CommentPoster {
   private github: GitHubClient;
@@ -100,6 +101,55 @@ export class CommentPoster {
     } catch (error: any) {
       console.error('✗ Failed to post summary:', error.message || error);
     }
+  }
+
+  /**
+   * Post auto-fixes as GitHub suggestions (shows "Apply suggestion" button)
+   * This allows users to accept/reject fixes directly in GitHub UI
+   */
+  async postAutoFixesAsSuggestions(fixes: AutoFix[]): Promise<void> {
+    if (fixes.length === 0) {
+      console.log('\n✓ No auto-fixes to post as suggestions.');
+      return;
+    }
+
+    console.log(`\n📤 Posting ${fixes.length} auto-fix(es) as GitHub suggestions...`);
+    console.log('   💡 These will show "Apply suggestion" buttons in GitHub PR\n');
+
+    let posted = 0;
+    let failed = 0;
+
+    for (const fix of fixes) {
+      try {
+        await this.github.postReviewCommentWithSuggestion(
+          this.owner,
+          this.repo,
+          this.prNumber,
+          this.commitId,
+          fix.file,
+          fix.line,
+          fix.issue,
+          fix.originalCode,
+          fix.fixedCode,
+          fix.explanation
+        );
+        posted++;
+        console.log(`  ✓ Posted suggestion for ${fix.file}:${fix.line}`);
+        
+        // Rate limit: 1 request per second
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      } catch (error: any) {
+        failed++;
+        console.error(`  ✗ Failed to post suggestion for ${fix.file}:${fix.line}`);
+        console.error(`     Error: ${error.message || error}`);
+      }
+    }
+
+    console.log(`\n✓ Posted ${posted} suggestion(s) to GitHub PR`);
+    if (failed > 0) {
+      console.log(`  ⚠️  ${failed} suggestion(s) failed to post`);
+    }
+    console.log('\n💡 In GitHub PR, you will see "Apply suggestion" buttons on each fix!');
   }
 
   private formatComment(comment: ReviewComment): string {

@@ -32,6 +32,7 @@ if (isLegacyFormat) {
     .option('--post', 'Post comments back to GitHub PR')
     .option('--enterprise', 'Use enterprise-grade review (with advanced features)')
     .option('--auto-fix', 'Enable auto code fix generation')
+    .option('--auto-apply', 'Auto-apply low-risk fixes and prompt for high-risk fixes')
     .action(async (options) => {
       await runLegacyReview(options);
     });
@@ -54,6 +55,7 @@ if (isLegacyFormat) {
     .option('--post', 'Post comments to GitHub')
     .option('--enterprise', 'Use enterprise-grade review')
     .option('--auto-fix', 'Enable auto code fix generation')
+    .option('--auto-apply', 'Auto-apply low-risk fixes and prompt for high-risk fixes')
     .action(async (options) => {
       await runReview(options);
     });
@@ -132,7 +134,7 @@ async function runLegacyReview(options: any) {
   }
 
   if (options.enterprise) {
-    await runEnterpriseReview(owner, repo, prNumber, githubToken, geminiKey, options.post, options.autoFix);
+    await runEnterpriseReview(owner, repo, prNumber, githubToken, geminiKey, options.post, options.autoFix, options.autoApply);
   } else {
     await runBasicReview(owner, repo, prNumber, githubToken, geminiKey, options.post);
   }
@@ -204,7 +206,7 @@ async function runBasicReview(owner: string, repo: string, prNumber: number, git
 }
 
 // Enterprise review (new functionality)
-async function runEnterpriseReview(owner: string, repo: string, prNumber: number, githubToken: string, geminiKey: string, post: boolean, autoFix: boolean = false) {
+async function runEnterpriseReview(owner: string, repo: string, prNumber: number, githubToken: string, geminiKey: string, post: boolean, autoFix: boolean = false, autoApply: boolean = false) {
   try {
     const github = new GitHubClient(githubToken);
     const reviewer = new EnterpriseReviewer(geminiKey, githubToken);
@@ -274,6 +276,55 @@ async function runEnterpriseReview(owner: string, repo: string, prNumber: number
       console.log('='.repeat(60));
     }
 
+    // Apply auto-fixes if enabled
+    if (autoApply && report.autoFixes && report.autoFixes.fixes.length > 0) {
+      console.log('\n' + '='.repeat(60));
+      console.log('🔧 APPLYING AUTO-FIXES');
+      console.log('='.repeat(60));
+      
+      try {
+        const { AutoFixApplier } = await import('./ai/auto-fix-applier.js');
+        
+        // Get the repository path (for local files)
+        // For PR reviews, we need to clone or checkout the PR branch
+        // For now, we'll use the current directory and assume files are available
+        const repoPath = process.cwd();
+        const applier = new AutoFixApplier(repoPath, true);
+        
+        const applyReport = await applier.applyFixes(report.autoFixes.fixes, true);
+        
+        console.log('\n' + '='.repeat(60));
+        console.log('📊 AUTO-FIX APPLICATION RESULTS');
+        console.log('='.repeat(60));
+        console.log(`  ✅ Auto-applied: ${applyReport.autoApplied}`);
+        console.log(`  ✅ User-approved: ${applyReport.userApproved}`);
+        console.log(`  ⏭️  Skipped: ${applyReport.skipped}`);
+        if (applyReport.errors > 0) {
+          console.log(`  ❌ Errors: ${applyReport.errors}`);
+        }
+        console.log('='.repeat(60));
+        
+        // Optionally create a commit
+        if (applier.isGitRepo() && (applyReport.autoApplied > 0 || applyReport.userApproved > 0)) {
+          const { createInterface } = await import('readline');
+          const rl = createInterface({
+            input: process.stdin,
+            output: process.stdout
+          });
+          
+          rl.question('\n❓ Create a git commit with applied fixes? (y/n): ', (answer: string) => {
+            rl.close();
+            if (answer.toLowerCase().trim() === 'y' || answer.toLowerCase().trim() === 'yes') {
+              applier.createCommit(`🤖 Apply ${applyReport.autoApplied + applyReport.userApproved} auto-fix(es) from Droog AI`);
+            }
+          });
+        }
+      } catch (error: any) {
+        console.warn(`\n⚠️  Auto-fix application failed: ${error.message}`);
+        console.warn('   Fixes were generated but not applied. You can apply them manually.');
+      }
+    }
+
     const reportJson = JSON.stringify(report, null, 2);
     writeFileSync('report.json', reportJson, 'utf-8');
     console.log('\n💾 Report saved to report.json\n');
@@ -281,6 +332,11 @@ async function runEnterpriseReview(owner: string, repo: string, prNumber: number
     if (post) {
       const poster = new CommentPoster(github, owner, repo, prNumber, prData.head.sha);
       await poster.postComments(report.comments);
+      
+      // Post auto-fixes as GitHub suggestions (shows "Apply suggestion" buttons)
+      if (report.autoFixes && report.autoFixes.fixes.length > 0) {
+        await poster.postAutoFixesAsSuggestions(report.autoFixes.fixes);
+      }
       
       // Post consolidated PR-level summary (not per-file)
       if (report.summary) {
@@ -307,7 +363,7 @@ async function runReview(options: any) {
   }
   
   if (options.enterprise) {
-    await runEnterpriseReview(owner, repo, prNumber, githubToken, geminiKey, options.post, options.autoFix);
+    await runEnterpriseReview(owner, repo, prNumber, githubToken, geminiKey, options.post, options.autoFix, options.autoApply);
   } else {
     await runBasicReview(owner, repo, prNumber, githubToken, geminiKey, options.post);
   }

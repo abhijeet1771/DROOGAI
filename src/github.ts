@@ -144,6 +144,42 @@ export class GitHubClient {
   }
 
   /**
+   * Post review comment with suggestion (shows "Apply suggestion" button in GitHub)
+   * GitHub suggestions use special format: ```suggestion code blocks
+   */
+  async postReviewCommentWithSuggestion(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    commitId: string,
+    path: string,
+    line: number,
+    issue: string,
+    originalCode: string,
+    suggestedCode: string,
+    explanation?: string
+  ): Promise<void> {
+    // GitHub suggestion format: wrap code in ```suggestion block
+    let body = `${issue}\n\n`;
+    
+    if (explanation) {
+      body += `${explanation}\n\n`;
+    }
+    
+    body += `\`\`\`suggestion\n${suggestedCode}\n\`\`\``;
+    
+    await this.octokit.rest.pulls.createReviewComment({
+      owner,
+      repo,
+      pull_number: prNumber,
+      commit_id: commitId,
+      path,
+      line,
+      body,
+    });
+  }
+
+  /**
    * Get repository tree (all files) from a branch
    */
   async getRepositoryTree(owner: string, repo: string, branch: string): Promise<Array<{ path: string; sha: string }>> {
