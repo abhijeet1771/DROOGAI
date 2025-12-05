@@ -44,7 +44,11 @@ export class CommentPoster {
       // For each file, post a summary comment or individual comments
       // GitHub API limits: 50 comments per PR review
       // We'll post high severity issues as individual comments
-      const highSeverityComments = fileComments.filter((c) => c.severity === 'high');
+      // Handle both normalized (high) and original (critical) severity values
+      const highSeverityComments = fileComments.filter((c) => {
+        const sev = (c.severity || '').toLowerCase();
+        return sev === 'high' || sev === 'critical';
+      });
       
       for (const comment of highSeverityComments.slice(0, 10)) {
         try {
@@ -67,7 +71,11 @@ export class CommentPoster {
       }
 
       // Post remaining comments as a summary in PR comment
-      const remainingComments = fileComments.filter((c) => c.severity !== 'high');
+      // Exclude high/critical severity (already posted as inline)
+      const remainingComments = fileComments.filter((c) => {
+        const sev = (c.severity || '').toLowerCase();
+        return sev !== 'high' && sev !== 'critical';
+      });
       if (remainingComments.length > 0) {
         const summary = this.formatSummaryComment(file, remainingComments);
         try {
@@ -83,7 +91,13 @@ export class CommentPoster {
   }
 
   private formatComment(comment: ReviewComment): string {
-    return `**${comment.severity.toUpperCase()}**: ${comment.message}\n\n**Suggestion**: ${comment.suggestion}`;
+    // Normalize severity for display
+    const sev = (comment.severity || '').toLowerCase();
+    const displaySeverity = sev === 'critical' ? 'HIGH' : 
+                           sev === 'major' ? 'MEDIUM' :
+                           sev === 'minor' ? 'LOW' :
+                           comment.severity.toUpperCase();
+    return `**${displaySeverity}**: ${comment.message}\n\n**Suggestion**:\n\`\`\`java\n${comment.suggestion}\n\`\`\``;
   }
 
   private formatSummaryComment(file: string, comments: ReviewComment[]): string {
