@@ -823,6 +823,44 @@ export class EnterpriseReviewer {
     // Impact on main branch
     summary += `**If merged, main branch will experience:**\n\n`;
     
+    // Build impact list FIRST (right after header)
+    const impacts: string[] = [];
+    if (report.impactAnalysis && report.impactAnalysis.impactedFeatures.length > 0) {
+      impacts.push(`**${report.impactAnalysis.impactedFeatures.length} feature(s)** will break`);
+    }
+    if (report.testImpact && report.testImpact.failingTests.length > 0) {
+      impacts.push(`**${report.testImpact.failingTests.length} test(s)** will fail (CI blocked)`);
+    }
+    if (report.performanceRegression && report.performanceRegression.regressions.length > 0) {
+      impacts.push(`**${report.performanceRegression.regressions.length} performance regression(s)** detected`);
+    }
+    if (report.breakingChanges && report.breakingChanges.count > 0) {
+      // Count total impacted files from all breaking changes (including call sites)
+      const totalImpactedFiles = new Set<string>();
+      let totalCallSites = 0;
+      report.breakingChanges.details.forEach((bc: any) => {
+        if (bc.impactedFiles) {
+          bc.impactedFiles.forEach((file: string) => totalImpactedFiles.add(file));
+        }
+        if (bc.callSites) {
+          totalCallSites += bc.callSites.length;
+          bc.callSites.forEach((cs: any) => totalImpactedFiles.add(cs.file));
+        }
+      });
+      
+      impacts.push(`**${report.breakingChanges.count} breaking change(s)** affecting ${totalImpactedFiles.size} file(s) (${totalCallSites} call site(s))`);
+    }
+    
+    if (impacts.length > 0) {
+      impacts.forEach(impact => {
+        summary += `- ${impact}\n`;
+      });
+    } else {
+      summary += `- ✅ No major breakage detected\n`;
+    }
+    
+    summary += `\n`;
+    
     // RISK-FOCUSED SUMMARY: What will break?
     
     // 1. Impact Analysis - What will break?
@@ -913,44 +951,6 @@ export class EnterpriseReviewer {
       });
     }
 
-    // Build impact list
-    const impacts: string[] = [];
-    if (report.impactAnalysis && report.impactAnalysis.impactedFeatures.length > 0) {
-      impacts.push(`**${report.impactAnalysis.impactedFeatures.length} feature(s)** will break`);
-    }
-    if (report.testImpact && report.testImpact.failingTests.length > 0) {
-      impacts.push(`**${report.testImpact.failingTests.length} test(s)** will fail (CI blocked)`);
-    }
-    if (report.performanceRegression && report.performanceRegression.regressions.length > 0) {
-      impacts.push(`**${report.performanceRegression.regressions.length} performance regression(s)** detected`);
-    }
-    if (report.breakingChanges && report.breakingChanges.count > 0) {
-      // Count total impacted files from all breaking changes (including call sites)
-      const totalImpactedFiles = new Set<string>();
-      let totalCallSites = 0;
-      report.breakingChanges.details.forEach((bc: any) => {
-        if (bc.impactedFiles) {
-          bc.impactedFiles.forEach((file: string) => totalImpactedFiles.add(file));
-        }
-        if (bc.callSites) {
-          totalCallSites += bc.callSites.length;
-          bc.callSites.forEach((cs: any) => totalImpactedFiles.add(cs.file));
-        }
-      });
-      
-      impacts.push(`**${report.breakingChanges.count} breaking change(s)** affecting ${totalImpactedFiles.size} file(s) (${totalCallSites} call site(s))`);
-    }
-    
-    if (impacts.length > 0) {
-      impacts.forEach(impact => {
-        summary += `- ${impact}\n`;
-      });
-    } else {
-      summary += `- ✅ No major breakage detected\n`;
-    }
-    
-    summary += `\n`;
-    
     // Must fix before merge (priority list)
     const mustFix: Array<{ priority: string; issue: string; impact: string }> = [];
     
