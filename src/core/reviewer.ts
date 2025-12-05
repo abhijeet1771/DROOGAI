@@ -119,6 +119,14 @@ export interface EnterpriseReviewReport {
     byType: Record<string, any[]>;
     total: number;
   };
+  impactAnalysis?: {
+    changedSymbols: any[];
+    impactedFiles: string[];
+    impactedFeatures: any[];
+    callSites: any[];
+    breakagePredictions: any[];
+    summary: string;
+  };
   summary?: string;
   recommendations?: string;
   averageConfidence?: number;
@@ -245,6 +253,17 @@ export class EnterpriseReviewer {
     // Breaking changes
     const breakingChanges = this.breakingChangeDetector.detectBreakingChanges(prSymbols);
     console.log(`✓ Found ${breakingChanges.length} breaking changes`);
+    
+    // Pre-merge Impact Analysis
+    console.log('\n📋 Phase 0.15: Pre-Merge Impact Analysis...');
+    const { ImpactAnalyzer } = await import('../analysis/impact.js');
+    const impactAnalyzer = new ImpactAnalyzer(this.indexer, (this as any).geminiKey);
+    const prFileNames = Array.from(prFileContents.keys());
+    const impactAnalysis = await impactAnalyzer.analyzeImpact(prSymbols, prFileNames);
+    console.log(`✓ Found ${impactAnalysis.impactedFiles.length} impacted file(s), ${impactAnalysis.impactedFeatures.length} feature(s) at risk`);
+    if (impactAnalysis.breakagePredictions.length > 0) {
+      console.log(`  ⚠️  ${impactAnalysis.breakagePredictions.length} potential breakage scenario(s) predicted`);
+    }
     
     // Design patterns
     const patterns = this.patternDetector.detectPatterns(prSymbols);
