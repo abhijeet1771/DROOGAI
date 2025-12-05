@@ -166,6 +166,7 @@ export interface EnterpriseReviewReport {
   patternMemory?: PatternMemoryReport; // Sprint 4.1: Pattern memory system
   codebaseKnowledge?: CodebaseKnowledgeReport; // Sprint 4.2: Codebase knowledge engine
   dependencyMap?: DependencyMap; // Sprint 4.3: Dependency mapper
+  autoFixes?: any; // Leading Feature: Auto-fix code generation
   prFlowValidation?: {
     issues: any[];
     unusedLocators: any[];
@@ -795,6 +796,34 @@ export class EnterpriseReviewer {
     }
     if (dependencyMap) {
       enterpriseReport.dependencyMap = dependencyMap;
+    }
+
+    // Leading Feature: Auto-Fix Generation (Top Priority)
+    console.log('  📋 Phase 0.29: Auto-Fix Code Generation...');
+    let autoFixReport: any = null;
+    try {
+      if ((this as any).geminiKey) {
+        const { AutoFixGenerator } = await import('../ai/auto-fix-generator.js');
+        const autoFixGenerator = new AutoFixGenerator((this as any).geminiKey);
+        autoFixReport = await autoFixGenerator.generateAutoFixes(
+          enterpriseReport.comments,
+          prFileContents
+        );
+        if (autoFixReport && autoFixReport.fixes.length > 0) {
+          console.log(`  ✓ Generated ${autoFixReport.fixes.length} auto-fix(es)`);
+          console.log(`  ✓ ${autoFixReport.canAutoApplyCount} can be applied automatically (saves ~${autoFixReport.estimatedTimeSaved})`);
+        } else {
+          console.log(`  ✓ No auto-fixes generated`);
+        }
+      } else {
+        console.log(`  ⚠️  Gemini key not available - skipping auto-fix generation`);
+      }
+    } catch (error: any) {
+      console.log(`  ⚠️ Auto-fix generation failed (non-critical): ${error.message}`);
+    }
+
+    if (autoFixReport) {
+      enterpriseReport.autoFixes = autoFixReport;
     }
     
     // All analysis already done in Phase 0, now just run architecture rules
@@ -1525,6 +1554,34 @@ export class EnterpriseReviewer {
           summary += `\n`;
           count++;
         }
+      }
+    }
+
+    // Auto-Fix Generation (Leading Feature)
+    if (report.autoFixes && report.autoFixes.fixes.length > 0) {
+      summary += `\n## 🤖 Auto-Fix Code Generation\n\n`;
+      summary += `${report.autoFixes.summary}\n\n`;
+      summary += `**💡 Time Saved:** ~${report.autoFixes.estimatedTimeSaved} by applying auto-fixes\n\n`;
+      
+      const autoApplicable = report.autoFixes.fixes.filter((f: any) => f.canAutoApply);
+      if (autoApplicable.length > 0) {
+        summary += `### ✅ Auto-Applicable Fixes (One-Click Apply)\n\n`;
+        autoApplicable.slice(0, 5).forEach((fix: any, index: number) => {
+          summary += `${index + 1}. **\`${fix.file}:${fix.line}\`** - ${fix.issue}\n`;
+          summary += `   - **Confidence:** ${(fix.confidence * 100).toFixed(0)}%\n`;
+          summary += `   - **Explanation:** ${fix.explanation}\n`;
+          summary += `   - **Fixed Code:**\n\`\`\`java\n${fix.fixedCode}\n\`\`\`\n\n`;
+        });
+      }
+
+      const manualFixes = report.autoFixes.fixes.filter((f: any) => !f.canAutoApply);
+      if (manualFixes.length > 0) {
+        summary += `### 📝 Manual Review Required\n\n`;
+        summary += `${manualFixes.length} fix(es) generated but require manual review:\n\n`;
+        manualFixes.slice(0, 3).forEach((fix: any, index: number) => {
+          summary += `${index + 1}. **\`${fix.file}:${fix.line}\`** - ${fix.issue}\n`;
+          summary += `   - **Fixed Code:**\n\`\`\`java\n${fix.fixedCode}\n\`\`\`\n\n`;
+        });
       }
     }
     
