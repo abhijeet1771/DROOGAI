@@ -160,10 +160,13 @@ export interface EnterpriseReviewReport {
     brokenFlows: any[];
     crossFileIssues: any[]; // Batch 2
     methodCallMismatches: any[]; // Batch 2
+    breakingFlowChanges: any[]; // Batch 3
+    incompleteFlows: any[]; // Batch 3
     flowGraph?: {
       nodes: Array<{ id: string; type: string; file: string }>;
       edges: Array<{ from: string; to: string; type: string }>;
     }; // Batch 2
+    overallCompletenessScore?: number; // Batch 3
     summary: string;
   };
   summary?: string;
@@ -1153,7 +1156,13 @@ export class EnterpriseReviewer {
         report.prFlowValidation.incompleteFlows.slice(0, 3).forEach((flow: any, index: number) => {
           summary += `${index + 1}. **\`${flow.file}:${flow.line}\`** - ${flow.element}\n`;
           if (flow.completenessScore) {
-            summary += `   - **Completeness:** ${flow.completenessScore}% (${this.getCompletenessDescription(flow.completenessScore)})\n`;
+            let desc = '';
+            const score = flow.completenessScore;
+            if (score >= 90) desc = '✅ Excellent';
+            else if (score >= 75) desc = '🟡 Good';
+            else if (score >= 50) desc = '🟠 Fair';
+            else desc = '🔴 Poor';
+            summary += `   - **Completeness:** ${flow.completenessScore}% (${desc})\n`;
           }
           summary += `   - **Issue:** ${flow.message}\n`;
           summary += `   - **Fix:** ${flow.suggestion}\n\n`;
