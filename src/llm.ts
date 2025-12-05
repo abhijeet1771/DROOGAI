@@ -235,9 +235,10 @@ Analyze this diff and return JSON array of issues.`;
     let confidence = 0.7; // Base confidence
 
     // Higher confidence for high severity issues (more likely to be real)
-    if (severity === 'high' || severity === 'critical') {
+    const sev = severity.toLowerCase();
+    if (sev === 'high' || sev === 'critical') {
       confidence = 0.9;
-    } else if (severity === 'medium' || severity === 'major') {
+    } else if (sev === 'medium' || sev === 'major') {
       confidence = 0.75;
     } else {
       confidence = 0.6;

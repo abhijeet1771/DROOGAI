@@ -533,7 +533,8 @@ export class EnterpriseReviewer {
       enterpriseReport.averageConfidence = 
         confidences.reduce((sum, c) => sum + c, 0) / confidences.length;
     }
-    console.log(`✓ Average confidence: ${(enterpriseReport.averageConfidence || 0).toFixed(2)}`);
+    const avgConfidence = enterpriseReport.averageConfidence || 0;
+    console.log(`✓ Average confidence: ${(avgConfidence * 100).toFixed(2)}%`);
 
     // Phase 8: Generate summary
     console.log('\n📋 Phase 8: Generating Summary...');

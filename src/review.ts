@@ -51,10 +51,20 @@ export class ReviewProcessor {
       }
     }
 
+    // Count severities - handle both normalized (high/medium/low) and original (critical/major/minor) formats
     const issuesBySeverity = {
-      high: comments.filter((c) => c.severity === 'high').length,
-      medium: comments.filter((c) => c.severity === 'medium').length,
-      low: comments.filter((c) => c.severity === 'low').length,
+      high: comments.filter((c) => {
+        const sev = (c.severity || '').toLowerCase();
+        return sev === 'high' || sev === 'critical';
+      }).length,
+      medium: comments.filter((c) => {
+        const sev = (c.severity || '').toLowerCase();
+        return sev === 'medium' || sev === 'major';
+      }).length,
+      low: comments.filter((c) => {
+        const sev = (c.severity || '').toLowerCase();
+        return sev === 'low' || sev === 'minor' || sev === 'nitpick';
+      }).length,
     };
 
     return {
