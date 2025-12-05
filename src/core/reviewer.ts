@@ -1196,7 +1196,6 @@ export class EnterpriseReviewer {
     
     return summary;
   }
-  }
 
   /**
    * Calculate impact score for breaking changes
