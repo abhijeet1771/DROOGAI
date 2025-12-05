@@ -7,7 +7,7 @@
  */
 
 export interface PRFlowIssue {
-  type: 'unused_locator' | 'unused_method' | 'missing_step_def' | 'missing_feature_step' | 'broken_flow';
+  type: 'unused_locator' | 'unused_method' | 'missing_step_def' | 'missing_feature_step' | 'broken_flow' | 'cross_file_issue' | 'method_call_mismatch';
   severity: 'high' | 'medium' | 'low';
   file: string;
   line?: number;
@@ -15,6 +15,14 @@ export interface PRFlowIssue {
   message: string;
   suggestion: string;
   relatedFiles?: string[]; // Files that should use this element
+  crossFileFlow?: {
+    locatorFile: string;
+    methodFile: string;
+    stepDefFile: string;
+    featureFile: string;
+  }; // Cross-file flow tracking (Batch 2)
+  actualCall?: string; // Actual method call found (Batch 2)
+  expectedCall?: string; // Expected method call (Batch 2)
 }
 
 export interface PRFlowReport {
@@ -24,6 +32,12 @@ export interface PRFlowReport {
   missingStepDefs: PRFlowIssue[];
   missingFeatureSteps: PRFlowIssue[];
   brokenFlows: PRFlowIssue[];
+  crossFileIssues: PRFlowIssue[]; // Batch 2
+  methodCallMismatches: PRFlowIssue[]; // Batch 2
+  flowGraph?: {
+    nodes: Array<{ id: string; type: 'locator' | 'method' | 'stepdef' | 'feature'; file: string }>;
+    edges: Array<{ from: string; to: string; type: string }>;
+  }; // Batch 2: Dependency graph
   summary: string;
 }
 
@@ -39,10 +53,15 @@ export class PRFlowAnalyzer {
     const missingStepDefs: PRFlowIssue[] = [];
     const missingFeatureSteps: PRFlowIssue[] = [];
     const brokenFlows: PRFlowIssue[] = [];
+    const crossFileIssues: PRFlowIssue[] = []; // Batch 2
+    const methodCallMismatches: PRFlowIssue[] = []; // Batch 2
 
     try {
       // Extract all elements from PR files
       const { locators, methods, stepDefs, featureSteps } = this.extractPRElements(prFiles, prFileNames);
+      
+      // Batch 2: Build cross-file flow graph
+      const flowGraph = this.buildFlowGraph(locators, methods, stepDefs, featureSteps);
 
       // 1. Check unused locators in PR
       for (const locator of locators) {
@@ -68,11 +87,33 @@ export class PRFlowAnalyzer {
 
       // 2. Check unused methods in PR
       for (const method of methods) {
-        const usedInStepDef = stepDefs.some(sd => 
+        // Batch 2: Verify actual method calls (not just name matching)
+        const stepDefsUsingMethod = stepDefs.filter(sd => 
           this.isMethodCalledInStepDef(method.name, sd.code || '', sd.file)
         );
         
-        if (!usedInStepDef) {
+        // Batch 2: Check actual method calls
+        for (const stepDef of stepDefsUsingMethod) {
+          const actualCall = this.extractMethodCall(stepDef.code || '', method.name);
+          if (actualCall && actualCall !== method.name) {
+            const issue: PRFlowIssue = {
+              type: 'method_call_mismatch',
+              severity: 'high',
+              file: stepDef.file,
+              line: stepDef.line,
+              element: method.name,
+              message: `Step definition calls "${actualCall}" but method is named "${method.name}"`,
+              suggestion: `Update method call to "${method.name}()" or rename method to match call`,
+              actualCall,
+              expectedCall: method.name,
+              relatedFiles: [method.file],
+            };
+            methodCallMismatches.push(issue);
+            issues.push(issue);
+          }
+        }
+        
+        if (stepDefsUsingMethod.length === 0) {
           const issue: PRFlowIssue = {
             type: 'unused_method',
             severity: 'high',
@@ -132,7 +173,7 @@ export class PRFlowAnalyzer {
         }
       }
 
-      // 5. Check broken flows (locator → method → step def → feature)
+      // 5. Check broken flows (locator → method → step def → feature) - Enhanced with cross-file tracking
       for (const locator of locators) {
         const method = methods.find(m => 
           this.isLocatorUsedInMethod(locator.name, m.code || '', m.file)
@@ -148,6 +189,14 @@ export class PRFlowAnalyzer {
               this.matchesStepPattern(fs.step, stepDef.pattern)
             );
             
+            // Batch 2: Track cross-file flow
+            const crossFileFlow = {
+              locatorFile: locator.file,
+              methodFile: method.file,
+              stepDefFile: stepDef.file,
+              featureFile: featureStep?.file || 'MISSING',
+            };
+            
             if (!featureStep) {
               const issue: PRFlowIssue = {
                 type: 'broken_flow',
@@ -158,16 +207,39 @@ export class PRFlowAnalyzer {
                 message: `Flow is broken: Locator "${locator.name}" → Method "${method.name}" → Step Def "${stepDef.pattern}" → Missing Feature Step`,
                 suggestion: `Complete the flow by adding feature step: When ${stepDef.pattern}`,
                 relatedFiles: [method.file, stepDef.file],
+                crossFileFlow, // Batch 2: Cross-file tracking
               };
               brokenFlows.push(issue);
               issues.push(issue);
+            } else {
+              // Batch 2: Check if flow spans multiple files (cross-file issue)
+              const uniqueFiles = new Set([locator.file, method.file, stepDef.file, featureStep.file]);
+              if (uniqueFiles.size > 1) {
+                // Cross-file flow detected - verify all files are in PR
+                const allFilesInPR = Array.from(uniqueFiles).every(file => prFileNames.includes(file));
+                if (!allFilesInPR) {
+                  const issue: PRFlowIssue = {
+                    type: 'cross_file_issue',
+                    severity: 'medium',
+                    file: locator.file,
+                    line: locator.line,
+                    element: `${locator.name} → ${method.name} → ${stepDef.pattern} → ${featureStep.step}`,
+                    message: `Flow spans multiple files but some files are not in PR: ${Array.from(uniqueFiles).filter(f => !prFileNames.includes(f)).join(', ')}`,
+                    suggestion: `Ensure all related files are included in PR or verify flow is complete`,
+                    relatedFiles: Array.from(uniqueFiles),
+                    crossFileFlow, // Batch 2: Cross-file tracking
+                  };
+                  crossFileIssues.push(issue);
+                  issues.push(issue);
+                }
+              }
             }
           }
         }
       }
 
       // Generate summary
-      const summary = this.generateSummary(issues, unusedLocators, unusedMethods, missingStepDefs, missingFeatureSteps, brokenFlows);
+      const summary = this.generateSummary(issues, unusedLocators, unusedMethods, missingStepDefs, missingFeatureSteps, brokenFlows, crossFileIssues, methodCallMismatches);
 
       return {
         issues,
@@ -176,6 +248,9 @@ export class PRFlowAnalyzer {
         missingStepDefs,
         missingFeatureSteps,
         brokenFlows,
+        crossFileIssues, // Batch 2
+        methodCallMismatches, // Batch 2
+        flowGraph, // Batch 2
         summary,
       };
     } catch (error: any) {
@@ -360,6 +435,87 @@ export class PRFlowAnalyzer {
   }
 
   /**
+   * Build cross-file flow graph (Batch 2)
+   */
+  private buildFlowGraph(
+    locators: Array<{ name: string; file: string; line: number; code?: string }>,
+    methods: Array<{ name: string; file: string; line: number; code?: string }>,
+    stepDefs: Array<{ pattern: string; method: string; file: string; line: number; code?: string }>,
+    featureSteps: Array<{ step: string; file: string; line: number }>
+  ): {
+    nodes: Array<{ id: string; type: 'locator' | 'method' | 'stepdef' | 'feature'; file: string }>;
+    edges: Array<{ from: string; to: string; type: string }>;
+  } {
+    const nodes: Array<{ id: string; type: 'locator' | 'method' | 'stepdef' | 'feature'; file: string }> = [];
+    const edges: Array<{ from: string; to: string; type: string }> = [];
+
+    // Add nodes
+    locators.forEach(loc => {
+      nodes.push({ id: `locator:${loc.name}`, type: 'locator', file: loc.file });
+    });
+    methods.forEach(method => {
+      nodes.push({ id: `method:${method.name}`, type: 'method', file: method.file });
+    });
+    stepDefs.forEach(sd => {
+      nodes.push({ id: `stepdef:${sd.pattern}`, type: 'stepdef', file: sd.file });
+    });
+    featureSteps.forEach(fs => {
+      nodes.push({ id: `feature:${fs.step}`, type: 'feature', file: fs.file });
+    });
+
+    // Add edges (locator → method)
+    for (const locator of locators) {
+      const method = methods.find(m => this.isLocatorUsedInMethod(locator.name, m.code || '', m.file));
+      if (method) {
+        edges.push({ from: `locator:${locator.name}`, to: `method:${method.name}`, type: 'uses' });
+      }
+    }
+
+    // Add edges (method → step def)
+    for (const method of methods) {
+      const stepDef = stepDefs.find(sd => this.isMethodCalledInStepDef(method.name, sd.code || '', sd.file));
+      if (stepDef) {
+        edges.push({ from: `method:${method.name}`, to: `stepdef:${stepDef.pattern}`, type: 'calls' });
+      }
+    }
+
+    // Add edges (step def → feature)
+    for (const stepDef of stepDefs) {
+      const featureStep = featureSteps.find(fs => this.matchesStepPattern(fs.step, stepDef.pattern));
+      if (featureStep) {
+        edges.push({ from: `stepdef:${stepDef.pattern}`, to: `feature:${featureStep.step}`, type: 'references' });
+      }
+    }
+
+    return { nodes, edges };
+  }
+
+  /**
+   * Extract actual method call from code (Batch 2)
+   */
+  private extractMethodCall(code: string, methodName: string): string | null {
+    // Look for method calls: methodName(), this.methodName(), pageObject.methodName()
+    const patterns = [
+      new RegExp(`\\b${methodName}\\s*\\(`, 'i'),
+      new RegExp(`\\.${methodName}\\s*\\(`, 'i'),
+      new RegExp(`this\\.${methodName}\\s*\\(`, 'i'),
+    ];
+
+    for (const pattern of patterns) {
+      const match = code.match(pattern);
+      if (match) {
+        // Extract the full call
+        const callMatch = code.substring(match.index || 0).match(/(\w+(?:\.\w+)*)\s*\(/);
+        if (callMatch) {
+          return callMatch[1];
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Generate human-readable summary
    */
   private generateSummary(
@@ -368,7 +524,9 @@ export class PRFlowAnalyzer {
     unusedMethods: PRFlowIssue[],
     missingStepDefs: PRFlowIssue[],
     missingFeatureSteps: PRFlowIssue[],
-    brokenFlows: PRFlowIssue[]
+    brokenFlows: PRFlowIssue[],
+    crossFileIssues: PRFlowIssue[], // Batch 2
+    methodCallMismatches: PRFlowIssue[] // Batch 2
   ): string {
     if (issues.length === 0) {
       return '✅ All PR flow elements are properly connected (Locator → Method → Step Def → Feature File)';
@@ -390,6 +548,12 @@ export class PRFlowAnalyzer {
     }
     if (brokenFlows.length > 0) {
       parts.push(`${brokenFlows.length} broken flow(s) detected`);
+    }
+    if (crossFileIssues.length > 0) { // Batch 2
+      parts.push(`${crossFileIssues.length} cross-file flow issue(s)`);
+    }
+    if (methodCallMismatches.length > 0) { // Batch 2
+      parts.push(`${methodCallMismatches.length} method call mismatch(es)`);
     }
 
     return `⚠️ Found ${issues.length} PR flow issue(s): ${parts.join(', ')}`;

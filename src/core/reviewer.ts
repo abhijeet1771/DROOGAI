@@ -158,6 +158,12 @@ export interface EnterpriseReviewReport {
     missingStepDefs: any[];
     missingFeatureSteps: any[];
     brokenFlows: any[];
+    crossFileIssues: any[]; // Batch 2
+    methodCallMismatches: any[]; // Batch 2
+    flowGraph?: {
+      nodes: Array<{ id: string; type: string; file: string }>;
+      edges: Array<{ from: string; to: string; type: string }>;
+    }; // Batch 2
     summary: string;
   };
   summary?: string;
@@ -1094,6 +1100,36 @@ export class EnterpriseReviewer {
         summary += `### Unused Locators in PR\n\n`;
         summary += `**${report.prFlowValidation.unusedLocators.length} locator(s)** defined but not used in PR methods.\n\n`;
         summary += `**Note:** Review these locators - they may be needed for future use or should be removed.\n\n`;
+      }
+      
+      // Batch 2: Cross-file issues
+      if (report.prFlowValidation.crossFileIssues && report.prFlowValidation.crossFileIssues.length > 0) {
+        summary += `### Cross-File Flow Issues\n\n`;
+        summary += `**${report.prFlowValidation.crossFileIssues.length} cross-file flow issue(s)** detected.\n\n`;
+        report.prFlowValidation.crossFileIssues.slice(0, 3).forEach((issue: any, index: number) => {
+          summary += `${index + 1}. **Flow spans multiple files:**\n`;
+          if (issue.crossFileFlow) {
+            summary += `   - Locator: \`${issue.crossFileFlow.locatorFile}\`\n`;
+            summary += `   - Method: \`${issue.crossFileFlow.methodFile}\`\n`;
+            summary += `   - Step Def: \`${issue.crossFileFlow.stepDefFile}\`\n`;
+            summary += `   - Feature: \`${issue.crossFileFlow.featureFile}\`\n`;
+          }
+          summary += `   - **Issue:** ${issue.message}\n`;
+          summary += `   - **Fix:** ${issue.suggestion}\n\n`;
+        });
+      }
+      
+      // Batch 2: Method call mismatches
+      if (report.prFlowValidation.methodCallMismatches && report.prFlowValidation.methodCallMismatches.length > 0) {
+        summary += `### Method Call Mismatches\n\n`;
+        summary += `**${report.prFlowValidation.methodCallMismatches.length} method call mismatch(es)** detected.\n\n`;
+        report.prFlowValidation.methodCallMismatches.slice(0, 3).forEach((mismatch: any, index: number) => {
+          summary += `${index + 1}. **\`${mismatch.file}:${mismatch.line}\`** - Method \`${mismatch.element}()\`\n`;
+          summary += `   - **Actual call:** \`${mismatch.actualCall}()\`\n`;
+          summary += `   - **Expected:** \`${mismatch.expectedCall}()\`\n`;
+          summary += `   - **Issue:** ${mismatch.message}\n`;
+          summary += `   - **Fix:** ${mismatch.suggestion}\n\n`;
+        });
       }
     }
     
