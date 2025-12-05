@@ -151,6 +151,15 @@ export interface EnterpriseReviewReport {
     totalIssues: number;
     readabilityScore: number;
   };
+  prFlowValidation?: {
+    issues: any[];
+    unusedLocators: any[];
+    unusedMethods: any[];
+    missingStepDefs: any[];
+    missingFeatureSteps: any[];
+    brokenFlows: any[];
+    summary: string;
+  };
   summary?: string;
   recommendations?: string;
   averageConfidence?: number;
@@ -1047,6 +1056,45 @@ export class EnterpriseReviewer {
     
     if (report.gherkinSuggestions && report.gherkinSuggestions.totalIssues > 10) {
       summary += `**Note:** ${report.gherkinSuggestions.totalIssues} Gherkin improvements suggested (see inline comments)\n\n`;
+    }
+    
+    // PR Flow Validation (NEW - Batch 1)
+    if (report.prFlowValidation && report.prFlowValidation.issues.length > 0) {
+      summary += `\n## 🔗 PR Flow Validation\n\n`;
+      summary += `${report.prFlowValidation.summary}\n\n`;
+      
+      if (report.prFlowValidation.brokenFlows.length > 0) {
+        summary += `### Broken Flows (High Priority)\n\n`;
+        report.prFlowValidation.brokenFlows.slice(0, 5).forEach((flow: any, index: number) => {
+          summary += `${index + 1}. **\`${flow.file}:${flow.line}\`** - ${flow.element}\n`;
+          summary += `   - **Issue:** ${flow.message}\n`;
+          summary += `   - **Fix:** ${flow.suggestion}\n\n`;
+        });
+      }
+      
+      if (report.prFlowValidation.unusedMethods.length > 0) {
+        summary += `### Unused Methods in PR\n\n`;
+        report.prFlowValidation.unusedMethods.slice(0, 5).forEach((method: any, index: number) => {
+          summary += `${index + 1}. **\`${method.file}:${method.line}\`** - \`${method.element}()\`\n`;
+          summary += `   - **Issue:** ${method.message}\n`;
+          summary += `   - **Fix:** ${method.suggestion}\n\n`;
+        });
+      }
+      
+      if (report.prFlowValidation.missingStepDefs.length > 0) {
+        summary += `### Missing Step Definitions\n\n`;
+        report.prFlowValidation.missingStepDefs.slice(0, 5).forEach((stepDef: any, index: number) => {
+          summary += `${index + 1}. **\`${stepDef.file}:${stepDef.line}\`** - Method \`${stepDef.element}()\`\n`;
+          summary += `   - **Issue:** ${stepDef.message}\n`;
+          summary += `   - **Fix:** ${stepDef.suggestion}\n\n`;
+        });
+      }
+      
+      if (report.prFlowValidation.unusedLocators.length > 0) {
+        summary += `### Unused Locators in PR\n\n`;
+        summary += `**${report.prFlowValidation.unusedLocators.length} locator(s)** defined but not used in PR methods.\n\n`;
+        summary += `**Note:** Review these locators - they may be needed for future use or should be removed.\n\n`;
+      }
     }
     
     // Reviewer Suggestions (keep this - helpful for PR)
