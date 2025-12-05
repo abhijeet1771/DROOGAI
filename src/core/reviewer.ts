@@ -1188,8 +1188,8 @@ export class EnterpriseReviewer {
       summary += `\n## 📁 Code Organization\n\n`;
       summary += `${report.codeOrganization.summary}\n\n`;
       
-      const wrongLocation = report.codeOrganization.issues.filter(i => i.type === 'wrong_location');
-      const separation = report.codeOrganization.issues.filter(i => i.type === 'missing_separation');
+      const wrongLocation = report.codeOrganization.issues.filter((i: any) => i.type === 'wrong_location');
+      const separation = report.codeOrganization.issues.filter((i: any) => i.type === 'missing_separation');
       
       if (wrongLocation.length > 0) {
         summary += `### Files in Wrong Location\n\n`;
