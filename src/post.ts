@@ -286,18 +286,28 @@ export class CommentPoster {
       const message = (comment.message || '').toLowerCase();
       const suggestion = (comment.suggestion || '').toLowerCase();
       const combined = `${message} ${suggestion}`.toLowerCase();
+      const sev = (comment.severity || '').toLowerCase();
 
-      // INCLUDE: Breaking change related
+      // INCLUDE: All high/critical severity comments (they're important enough)
+      if (sev === 'high' || sev === 'critical') {
+        return true;
+      }
+
+      // INCLUDE: Breaking change related (expanded keywords)
       if (combined.includes('breaking change') || 
           combined.includes('signature changed') ||
           combined.includes('visibility reduced') ||
+          combined.includes('visibility changed') ||
           combined.includes('return type changed') ||
+          combined.includes('return type') ||
           combined.includes('parameter type changed') ||
           combined.includes('method removed') ||
           combined.includes('will break') ||
           combined.includes('will fail') ||
           combined.includes('compilation') ||
-          combined.includes('runtime failure')) {
+          combined.includes('runtime failure') ||
+          combined.includes('api change') ||
+          combined.includes('backward compatibility')) {
         return true;
       }
 
@@ -341,9 +351,23 @@ export class CommentPoster {
         return false;
       }
 
-      // Default: Only include high/critical severity for risk-focused
-      const sev = (comment.severity || '').toLowerCase();
-      return sev === 'high' || sev === 'critical';
+      // Default: Include medium severity if it's clearly risk-focused
+      // (high/critical already included above)
+      if (sev === 'medium') {
+        // Check if it's performance regression or impact-related
+        if (combined.includes('performance') || 
+            combined.includes('regression') ||
+            combined.includes('slow') ||
+            combined.includes('inefficient') ||
+            combined.includes('complexity') ||
+            combined.includes('o(n') ||
+            combined.includes('n+1')) {
+          return true;
+        }
+      }
+
+      // Exclude low severity unless explicitly risk-focused
+      return false;
     });
   }
 }
