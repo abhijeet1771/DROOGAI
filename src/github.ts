@@ -101,6 +101,28 @@ export class GitHubClient {
     });
   }
 
+  /**
+   * Get file commit history
+   */
+  async getFileCommits(owner: string, repo: string, filepath: string): Promise<Array<{ author: string; date: string }>> {
+    try {
+      const response = await this.octokit.rest.repos.listCommits({
+        owner,
+        repo,
+        path: filepath,
+        per_page: 50, // Get last 50 commits
+      });
+
+      return response.data.map(commit => ({
+        author: commit.author?.login || commit.commit.author?.name || 'unknown',
+        date: commit.commit.author?.date || new Date().toISOString(),
+      }));
+    } catch (error) {
+      // Return empty array on error
+      return [];
+    }
+  }
+
   async postReviewComment(
     owner: string,
     repo: string,

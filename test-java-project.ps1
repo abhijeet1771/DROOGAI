@@ -51,3 +51,4 @@ foreach ($file in $javaFiles) {
 Write-Host "✅ Analysis complete! $($javaFiles.Count) file(s) analyzed." -ForegroundColor Green
 
 
+

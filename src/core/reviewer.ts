@@ -127,6 +127,20 @@ export interface EnterpriseReviewReport {
     breakagePredictions: any[];
     summary: string;
   };
+  testImpact?: {
+    affectedTests: any[];
+    coverageChange: number;
+    newCoverage: number;
+    missingCoverage: string[];
+    failingTests: any[];
+  };
+  performanceRegression?: {
+    regressions: any[];
+    improvements: any[];
+    overallImpact: string;
+    estimatedImpact: string;
+  };
+  reviewerSuggestions?: any[];
   summary?: string;
   recommendations?: string;
   averageConfidence?: number;
@@ -156,6 +170,10 @@ export class EnterpriseReviewer {
   private vectorDB?: any;
   private embeddingGenerator?: any;
   private geminiKey: string;
+  // New features
+  private patternLearner?: any;
+  private mlLearner?: any;
+  private reviewerSuggester?: any;
   
   constructor(geminiKey: string, githubToken: string) {
     this.geminiKey = geminiKey;
@@ -264,6 +282,44 @@ export class EnterpriseReviewer {
     if (impactAnalysis.breakagePredictions.length > 0) {
       console.log(`  ⚠️  ${impactAnalysis.breakagePredictions.length} potential breakage scenario(s) predicted`);
     }
+    
+    // Test Impact Analysis
+    console.log('\n📋 Phase 0.16: Test Impact Analysis...');
+    const { TestImpactAnalyzer } = await import('../analysis/test-impact.js');
+    const testImpactAnalyzer = new TestImpactAnalyzer(this.indexer);
+    const testFiles = prFileNames.filter(f => f.includes('test') || f.includes('spec') || f.endsWith('Test.java'));
+    const testImpact = testImpactAnalyzer.analyzeTestImpact(prSymbols, testFiles);
+    const failingTests = testImpactAnalyzer.predictFailingTests(prSymbols);
+    console.log(`✓ Found ${testImpact.affectedTests.length} affected test(s), ${failingTests.length} likely to fail`);
+    if (testImpact.missingCoverage.length > 0) {
+      console.log(`  ⚠️  ${testImpact.missingCoverage.length} method(s) without test coverage`);
+    }
+    
+    // Performance Regression Detection
+    console.log('\n📋 Phase 0.17: Performance Regression Detection...');
+    const { PerformanceRegressionDetector } = await import('../analysis/performance-regression.js');
+    const perfRegressionDetector = new PerformanceRegressionDetector();
+    const perfAnalysis = perfRegressionDetector.detectRegressions(prSymbols);
+    console.log(`✓ Found ${perfAnalysis.regressions.length} performance regression(s), ${perfAnalysis.improvements.length} improvement(s)`);
+    if (perfAnalysis.overallImpact === 'degraded') {
+      console.log(`  ⚠️  Performance degradation detected: ${perfAnalysis.estimatedImpact}`);
+    }
+    
+    // Pattern Learning & Team Style
+    console.log('\n📋 Phase 0.18: Learning from Codebase Patterns...');
+    const { PatternLearner } = await import('../learning/pattern-learner.js');
+    this.patternLearner = new PatternLearner();
+    // Learn from previous reviews (if available)
+    const teamPatterns = this.patternLearner.checkTeamPatterns(prSymbols);
+    console.log(`✓ Found ${teamPatterns.matches.length} pattern match(es), ${teamPatterns.violations.length} violation(s)`);
+    
+    // Reviewer Suggestions
+    console.log('\n📋 Phase 0.19: Reviewer Suggestions...');
+    const { ReviewerSuggester } = await import('../ownership/reviewer-suggester.js');
+    this.reviewerSuggester = new ReviewerSuggester(this.github);
+    const [owner, repo] = prData.head.ref.split('/'); // Extract from PR data
+    const reviewerSuggestions = await this.reviewerSuggester.suggestReviewers(prFileNames, owner || 'unknown', repo || 'unknown');
+    console.log(`✓ Suggested ${reviewerSuggestions.length} reviewer(s) based on code ownership`);
     
     // Design patterns
     const patterns = this.patternDetector.detectPatterns(prSymbols);
@@ -540,6 +596,20 @@ export class EnterpriseReviewer {
         breakagePredictions: impactAnalysis.breakagePredictions,
         summary: impactAnalysis.summary,
       },
+      testImpact: {
+        affectedTests: testImpact.affectedTests,
+        coverageChange: testImpact.coverageChange,
+        newCoverage: testImpact.newCoverage,
+        missingCoverage: testImpact.missingCoverage,
+        failingTests: failingTests,
+      },
+      performanceRegression: {
+        regressions: perfAnalysis.regressions,
+        improvements: perfAnalysis.improvements,
+        overallImpact: perfAnalysis.overallImpact,
+        estimatedImpact: perfAnalysis.estimatedImpact,
+      },
+      reviewerSuggestions: reviewerSuggestions,
     };
     
     // All analysis already done in Phase 0, now just run architecture rules
@@ -748,6 +818,71 @@ export class EnterpriseReviewer {
       summary += `2. Run full test suite to catch any breakage\n`;
       summary += `3. Update calling code if method signatures have changed\n`;
       summary += `4. Consider deprecation for public APIs instead of breaking changes\n\n`;
+    }
+
+    // Add Test Impact Analysis section
+    if (report.testImpact && (report.testImpact.affectedTests.length > 0 || report.testImpact.failingTests.length > 0)) {
+      summary += `\n## 🧪 Test Impact Analysis\n\n`;
+      summary += `**Affected Tests:** ${report.testImpact.affectedTests.length}\n`;
+      summary += `**Tests Likely to Fail:** ${report.testImpact.failingTests.length}\n`;
+      summary += `**Coverage Change:** ${report.testImpact.coverageChange.toFixed(1)}%\n`;
+      summary += `**New Coverage:** ${report.testImpact.newCoverage.toFixed(1)}%\n\n`;
+      
+      if (report.testImpact.failingTests.length > 0) {
+        summary += `### ⚠️ Tests Likely to Fail\n\n`;
+        report.testImpact.failingTests.slice(0, 5).forEach((test: any) => {
+          summary += `- **${test.testFile}::${test.testMethod}** (${test.probability.toUpperCase()} probability)\n`;
+          summary += `  - Reason: ${test.reason}\n`;
+          summary += `  - Suggestion: ${test.suggestion}\n\n`;
+        });
+      }
+      
+      if (report.testImpact.missingCoverage.length > 0) {
+        summary += `### 📝 Missing Test Coverage\n\n`;
+        summary += `**${report.testImpact.missingCoverage.length} method(s) without tests:**\n`;
+        report.testImpact.missingCoverage.slice(0, 10).forEach((missing: string) => {
+          summary += `- ${missing}\n`;
+        });
+        summary += `\n`;
+      }
+    }
+
+    // Add Performance Regression section
+    if (report.performanceRegression && report.performanceRegression.regressions.length > 0) {
+      summary += `\n## ⚡ Performance Regression Detection\n\n`;
+      summary += `**Overall Impact:** ${report.performanceRegression.overallImpact.toUpperCase()}\n`;
+      summary += `**${report.performanceRegression.estimatedImpact}**\n\n`;
+      
+      if (report.performanceRegression.regressions.length > 0) {
+        summary += `### ⚠️ Performance Regressions\n\n`;
+        report.performanceRegression.regressions.slice(0, 5).forEach((reg: any) => {
+          summary += `- **${reg.file}::${reg.method}** (${reg.severity.toUpperCase()})\n`;
+          summary += `  - Issue: ${reg.issue}\n`;
+          summary += `  - Impact: ${reg.impact}\n`;
+          summary += `  - Estimated Slowdown: ${reg.estimatedSlowdown}\n`;
+          summary += `  - Suggestion: ${reg.suggestion}\n\n`;
+        });
+      }
+      
+      if (report.performanceRegression.improvements.length > 0) {
+        summary += `### ✅ Performance Improvements\n\n`;
+        report.performanceRegression.improvements.slice(0, 3).forEach((imp: any) => {
+          summary += `- **${imp.file}::${imp.method}**: ${imp.impact}\n`;
+        });
+        summary += `\n`;
+      }
+    }
+
+    // Add Reviewer Suggestions section
+    if (report.reviewerSuggestions && report.reviewerSuggestions.length > 0) {
+      summary += `\n## 👥 Suggested Reviewers\n\n`;
+      summary += `Based on code ownership and expertise:\n\n`;
+      report.reviewerSuggestions.forEach((suggestion: any) => {
+        summary += `- **@${suggestion.reviewer}** (${(suggestion.confidence * 100).toFixed(0)}% confidence)\n`;
+        summary += `  - Reason: ${suggestion.reason}\n`;
+        summary += `  - Expertise: ${suggestion.expertise.join(', ')}\n`;
+        summary += `  - Recent Activity: ${suggestion.recentActivity} days ago\n\n`;
+      });
     }
     
     if (report.duplicates && report.duplicates.withinPR > 0) {
