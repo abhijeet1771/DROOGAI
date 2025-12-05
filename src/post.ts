@@ -50,8 +50,13 @@ export class CommentPoster {
         return sev === 'high' || sev === 'critical';
       });
       
+      if (highSeverityComments.length > 0) {
+        console.log(`  📌 Found ${highSeverityComments.length} high/critical severity comment(s) for ${file} - posting as inline comments...`);
+      }
+      
       for (const comment of highSeverityComments.slice(0, 10)) {
         try {
+          console.log(`  📤 Attempting to post inline comment on ${comment.file}:${comment.line}...`);
           await this.github.postReviewComment(
             this.owner,
             this.repo,
@@ -65,8 +70,13 @@ export class CommentPoster {
           
           // Rate limit: 1 request per second
           await new Promise((resolve) => setTimeout(resolve, 1000));
-        } catch (error) {
-          console.error(`  ✗ Failed to post comment on ${comment.file}:${comment.line}`, error);
+        } catch (error: any) {
+          console.error(`  ✗ Failed to post comment on ${comment.file}:${comment.line}`);
+          console.error(`     Error: ${error.message || error}`);
+          if (error.response) {
+            console.error(`     Status: ${error.response.status}`);
+            console.error(`     Response: ${JSON.stringify(error.response.data)}`);
+          }
         }
       }
 
