@@ -436,15 +436,34 @@ export class EnterpriseReviewer {
       breakingChanges: { 
         count: breakingChanges.length, 
         impactedFiles: [...new Set(breakingChanges.flatMap(bc => bc.impactedFiles))], 
-        details: breakingChanges.map(bc => ({
-          symbol: bc.symbol.name,
-          file: bc.symbol.file,
-          changeType: bc.changeType,
-          message: bc.message,
-          severity: bc.severity,
-          impactedFiles: bc.impactedFiles,
-          callSites: bc.callSites.length,
-        }))
+        details: breakingChanges.map(bc => {
+          // Calculate impact score based on call sites
+          const impactScore = this.calculateImpactScore(bc.callSites.length, bc.impactedFiles.length, bc.severity);
+          
+          // Format call sites with file and line information
+          const callSiteDetails = bc.callSites.map(cs => ({
+            file: cs.file,
+            line: cs.line,
+            caller: cs.caller,
+          }));
+          
+          return {
+            symbol: bc.symbol.name,
+            file: bc.symbol.file,
+            line: bc.symbol.startLine,
+            changeType: bc.changeType,
+            message: bc.message,
+            severity: bc.severity,
+            oldSignature: bc.oldSignature,
+            newSignature: bc.newSignature,
+            impactedFiles: bc.impactedFiles,
+            callSites: {
+              count: bc.callSites.length,
+              details: callSiteDetails,
+            },
+            impactScore,
+          };
+        })
       },
       architectureViolations: { count: 0, details: [] },
       designPatterns: { detected: patterns, antiPatterns: antiPatterns },
@@ -641,7 +660,34 @@ export class EnterpriseReviewer {
     }
     
     if (report.breakingChanges && report.breakingChanges.count > 0) {
-      summary += `**Breaking Changes:** ${report.breakingChanges.count} detected\n`;
+      summary += `\n## Breaking Changes\n\n`;
+      summary += `**Total:** ${report.breakingChanges.count} breaking change(s) detected\n\n`;
+      
+      report.breakingChanges.details.forEach((bc: any) => {
+        summary += `### ${bc.symbol} (${bc.changeType})\n`;
+        summary += `- **File:** ${bc.file}:${bc.line}\n`;
+        summary += `- **Change:** ${bc.oldSignature || 'N/A'} → ${bc.newSignature || 'N/A'}\n`;
+        summary += `- **Severity:** ${bc.severity}\n`;
+        summary += `- **Impact Score:** ${bc.impactScore}/100\n`;
+        
+        if (bc.callSites && bc.callSites.count > 0) {
+          summary += `- **Call Sites:** ${bc.callSites.count} found\n`;
+          summary += `- **Impacted Files:** ${bc.impactedFiles.length}\n\n`;
+          
+          if (bc.callSites.details && bc.callSites.details.length > 0) {
+            summary += `**Affected Areas in Main Branch:**\n`;
+            bc.callSites.details.slice(0, 10).forEach((cs: any) => {
+              summary += `  - ${cs.file}:${cs.line} (called from ${cs.caller})\n`;
+            });
+            if (bc.callSites.details.length > 10) {
+              summary += `  ... and ${bc.callSites.details.length - 10} more\n`;
+            }
+            summary += `\n`;
+          }
+        } else {
+          summary += `- **Call Sites:** None found (may be external API or new code)\n\n`;
+        }
+      });
     }
 
     if (report.architectureViolations && report.architectureViolations.count > 0) {
@@ -878,7 +924,59 @@ export class EnterpriseReviewer {
       summary += `\n**Average Confidence:** ${(report.averageConfidence * 100).toFixed(1)}%\n`;
     }
     
+    if (report.breakingChanges && report.breakingChanges.count > 0) {
+      summary += `\n## Breaking Changes\n\n`;
+      summary += `**Total:** ${report.breakingChanges.count} breaking change(s) detected\n\n`;
+      
+      report.breakingChanges.details.forEach((bc: any) => {
+        summary += `### ${bc.symbol} (${bc.changeType})\n`;
+        summary += `- **File:** ${bc.file}:${bc.line || 'N/A'}\n`;
+        if (bc.oldSignature || bc.newSignature) {
+          summary += `- **Change:** ${bc.oldSignature || 'N/A'} → ${bc.newSignature || 'N/A'}\n`;
+        }
+        summary += `- **Severity:** ${bc.severity}\n`;
+        if (bc.impactScore !== undefined) {
+          summary += `- **Impact Score:** ${bc.impactScore}/100\n`;
+        }
+        
+        if (bc.callSites && bc.callSites.count > 0) {
+          summary += `- **Call Sites:** ${bc.callSites.count} found\n`;
+          summary += `- **Impacted Files:** ${bc.impactedFiles?.length || 0}\n\n`;
+          
+          if (bc.callSites.details && bc.callSites.details.length > 0) {
+            summary += `**Affected Areas in Main Branch:**\n`;
+            bc.callSites.details.slice(0, 10).forEach((cs: any) => {
+              summary += `  - ${cs.file}:${cs.line} (called from ${cs.caller})\n`;
+            });
+            if (bc.callSites.details.length > 10) {
+              summary += `  ... and ${bc.callSites.details.length - 10} more\n`;
+            }
+            summary += `\n`;
+          }
+        } else {
+          summary += `- **Call Sites:** None found (may be external API or new code)\n\n`;
+        }
+      });
+    }
+    
     return summary;
+  }
+
+  /**
+   * Calculate impact score for breaking changes
+   */
+  private calculateImpactScore(callSiteCount: number, impactedFileCount: number, severity: string): number {
+    // Base score from call sites (0-50 points)
+    const callSiteScore = Math.min(callSiteCount * 5, 50);
+    
+    // File impact score (0-30 points)
+    const fileScore = Math.min(impactedFileCount * 10, 30);
+    
+    // Severity multiplier (0-20 points)
+    const severityMultiplier = severity === 'high' ? 20 : severity === 'medium' ? 10 : 5;
+    
+    // Total impact score (0-100)
+    return Math.min(callSiteScore + fileScore + severityMultiplier, 100);
   }
   
   private generateRecommendations(report: EnterpriseReviewReport): string {

@@ -146,11 +146,22 @@ export class ReviewProcessor {
     for (const comment of batchComments) {
       const fileDiff = allDiffs.find(d => d.file === comment.file);
       if (fileDiff) {
+        // Try to map the line number from diff to actual file line
         const actualLine = this.mapDiffLineToFileLine(comment.line, fileDiff.lineMapping);
-        comments.push({
-          ...comment,
-          line: actualLine || comment.line,
-        });
+        if (actualLine) {
+          comments.push({
+            ...comment,
+            line: actualLine,
+          });
+        } else {
+          // If mapping fails, try to find the line in the actual file content
+          // by searching for the method/class name around the reported line
+          const mappedLine = this.findLineInFile(comment, fileDiff);
+          comments.push({
+            ...comment,
+            line: mappedLine || comment.line,
+          });
+        }
       } else {
         comments.push(comment);
       }
@@ -234,8 +245,8 @@ export class ReviewProcessor {
       return mapping.get(diffLine)!;
     }
     
-    // Find closest mapped line (within 5 lines)
-    for (let offset = 1; offset <= 5; offset++) {
+    // Find closest mapped line (within 10 lines for better accuracy)
+    for (let offset = 1; offset <= 10; offset++) {
       if (mapping.has(diffLine + offset)) {
         return mapping.get(diffLine + offset)!;
       }
@@ -244,6 +255,27 @@ export class ReviewProcessor {
       }
     }
     
+    return null;
+  }
+
+  /**
+   * Find line number in file by searching for method/class name
+   * Fallback when diff line mapping fails
+   */
+  private findLineInFile(comment: any, fileDiff: { file: string; diff: string; lineMapping: Map<number, number> }): number | null {
+    // Extract method/class name from comment message or suggestion
+    const methodMatch = comment.suggestion?.match(/(?:public|private|protected)?\s*(?:static)?\s*\w+\s+(\w+)\s*\(/);
+    if (methodMatch) {
+      const methodName = methodMatch[1];
+      // Search in diff for the method name
+      const diffLines = fileDiff.diff.split('\n');
+      for (let i = 0; i < diffLines.length; i++) {
+        if (diffLines[i].includes(methodName) && diffLines[i].includes('(')) {
+          // Map this diff line to file line
+          return this.mapDiffLineToFileLine(i + 1, fileDiff.lineMapping);
+        }
+      }
+    }
     return null;
   }
 

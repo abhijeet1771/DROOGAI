@@ -40,38 +40,58 @@ export class CommentPoster {
     }
 
     // Post comments with rate limiting
-    // Post ALL comments as inline comments (not just high/critical)
+    // Post high/critical as inline, medium/low as summary
     for (const [file, fileComments] of commentsByFile) {
-      // GitHub API limits: 50 comments per PR review
-      // Post all comments as inline comments (up to 50 per file to be safe)
-      const commentsToPost = fileComments.slice(0, 50);
+      // Separate high/critical from medium/low
+      const highSeverityComments = fileComments.filter((c) => {
+        const sev = (c.severity || '').toLowerCase();
+        return sev === 'high' || sev === 'critical';
+      });
       
-      if (commentsToPost.length > 0) {
-        console.log(`  📌 Found ${commentsToPost.length} comment(s) for ${file} - posting as inline comments...`);
+      const mediumLowComments = fileComments.filter((c) => {
+        const sev = (c.severity || '').toLowerCase();
+        return sev !== 'high' && sev !== 'critical';
+      });
+      
+      // Post high/critical as inline comments (up to 20 per file)
+      if (highSeverityComments.length > 0) {
+        console.log(`  📌 Found ${highSeverityComments.length} high/critical comment(s) for ${file} - posting as inline comments...`);
+        for (const comment of highSeverityComments.slice(0, 20)) {
+          try {
+            console.log(`  📤 Attempting to post inline comment on ${comment.file}:${comment.line}...`);
+            await this.github.postReviewComment(
+              this.owner,
+              this.repo,
+              this.prNumber,
+              this.commitId,
+              comment.file,
+              comment.line,
+              this.formatComment(comment)
+            );
+            console.log(`  ✓ Posted comment on ${comment.file}:${comment.line}`);
+            
+            // Rate limit: 1 request per second
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          } catch (error: any) {
+            console.error(`  ✗ Failed to post comment on ${comment.file}:${comment.line}`);
+            console.error(`     Error: ${error.message || error}`);
+            if (error.response) {
+              console.error(`     Status: ${error.response.status}`);
+              console.error(`     Response: ${JSON.stringify(error.response.data)}`);
+            }
+          }
+        }
       }
       
-      for (const comment of commentsToPost) {
-        try {
-          console.log(`  📤 Attempting to post inline comment on ${comment.file}:${comment.line}...`);
-          await this.github.postReviewComment(
-            this.owner,
-            this.repo,
-            this.prNumber,
-            this.commitId,
-            comment.file,
-            comment.line,
-            this.formatComment(comment)
-          );
-          console.log(`  ✓ Posted comment on ${comment.file}:${comment.line}`);
-          
-          // Rate limit: 1 request per second
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        } catch (error: any) {
-          console.error(`  ✗ Failed to post comment on ${comment.file}:${comment.line}`);
-          console.error(`     Error: ${error.message || error}`);
-          if (error.response) {
-            console.error(`     Status: ${error.response.status}`);
-            console.error(`     Response: ${JSON.stringify(error.response.data)}`);
+      // Post medium/low as summary comment
+      if (mediumLowComments.length > 0) {
+        const summary = this.formatSummaryComment(file, mediumLowComments);
+        if (summary.trim().length > 0 && summary !== `## Review Summary for \`${file}\`\n\n`) {
+          try {
+            await this.github.postComment(this.owner, this.repo, this.prNumber, summary);
+            console.log(`  ✓ Posted summary for ${file} (${mediumLowComments.length} medium/low issues)`);
+          } catch (error) {
+            console.error(`  ✗ Failed to post summary for ${file}`, error);
           }
         }
       }
