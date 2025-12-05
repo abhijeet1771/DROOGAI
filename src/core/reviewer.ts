@@ -762,28 +762,8 @@ export class EnterpriseReviewer {
   }
   
   private generateSummary(report: EnterpriseReviewReport): string {
-    let summary = `# PR Review Summary\n\n`;
-    summary += `**Total Issues:** ${report.totalIssues}\n`;
-    summary += `- High: ${report.issuesBySeverity.high}\n`;
-    summary += `- Medium: ${report.issuesBySeverity.medium}\n`;
-    
-    // Add design patterns section
-    if (report.designPatterns && (report.designPatterns.detected.length > 0 || report.designPatterns.antiPatterns.length > 0)) {
-      summary += `\n## Design Patterns\n\n`;
-      if (report.designPatterns.detected.length > 0) {
-        summary += `**Detected Patterns:** ${report.designPatterns.detected.length}\n`;
-        report.designPatterns.detected.forEach(p => {
-          summary += `- ${p.pattern} in ${p.location} (${p.file})\n`;
-        });
-      }
-      if (report.designPatterns.antiPatterns.length > 0) {
-        summary += `\n**Anti-Patterns:** ${report.designPatterns.antiPatterns.length}\n`;
-        report.designPatterns.antiPatterns.forEach(ap => {
-          summary += `- ${ap.type} in ${ap.location} (${ap.file}) - ${ap.severity}\n`;
-        });
-      }
-    }
-    summary += `- Low: ${report.issuesBySeverity.low}\n\n`;
+    let summary = `# ⚠️ Pre-Merge Risk Assessment\n\n`;
+    summary += `**Developer Note:** This PR may seem like a small change, but here's what could break:\n\n`;
     
     // RISK-FOCUSED SUMMARY: What will break?
     
@@ -935,72 +915,11 @@ export class EnterpriseReviewer {
       }
     }
     
+    // Skip traditional code review sections - focus only on what will break
+    // (Architecture violations, API design, complexity are less critical for risk assessment)
+    
+    // Add Breaking Changes section (4)
     if (report.breakingChanges && report.breakingChanges.count > 0) {
-      summary += `\n## Breaking Changes\n\n`;
-      summary += `**Total:** ${report.breakingChanges.count} breaking change(s) detected\n\n`;
-      
-      report.breakingChanges.details.forEach((bc: any) => {
-        summary += `### ${bc.symbol} (${bc.changeType})\n`;
-        summary += `- **File:** ${bc.file}:${bc.line}\n`;
-        summary += `- **Change:** ${bc.oldSignature || 'N/A'} → ${bc.newSignature || 'N/A'}\n`;
-        summary += `- **Severity:** ${bc.severity}\n`;
-        summary += `- **Impact Score:** ${bc.impactScore}/100\n`;
-        
-        if (bc.callSites && bc.callSites.count > 0) {
-          summary += `- **Call Sites:** ${bc.callSites.count} found\n`;
-          summary += `- **Impacted Files:** ${bc.impactedFiles.length}\n\n`;
-          
-          if (bc.callSites.details && bc.callSites.details.length > 0) {
-            summary += `**Affected Areas in Main Branch:**\n`;
-            bc.callSites.details.slice(0, 10).forEach((cs: any) => {
-              summary += `  - ${cs.file}:${cs.line} (called from ${cs.caller})\n`;
-            });
-            if (bc.callSites.details.length > 10) {
-              summary += `  ... and ${bc.callSites.details.length - 10} more\n`;
-            }
-            summary += `\n`;
-          }
-        } else {
-          summary += `- **Call Sites:** None found (may be external API or new code)\n\n`;
-        }
-      });
-    }
-
-    if (report.architectureViolations && report.architectureViolations.count > 0) {
-      summary += `**Architecture Violations:** ${report.architectureViolations.count} found\n`;
-    }
-
-    if (report.apiDesign && (report.apiDesign.issues.length > 0 || report.apiDesign.backwardCompatibility.length > 0)) {
-      summary += `\n## API Design\n\n`;
-      if (report.apiDesign.issues.length > 0) {
-        summary += `**API Issues:** ${report.apiDesign.issues.length}\n`;
-        report.apiDesign.issues.forEach(issue => {
-          summary += `- ${issue.issue} in ${issue.endpoint || 'unknown'} (${issue.file}:${issue.line}) - ${issue.severity}\n`;
-        });
-      }
-      if (report.apiDesign.backwardCompatibility.length > 0) {
-        summary += `\n**Backward Compatibility Issues:** ${report.apiDesign.backwardCompatibility.length}\n`;
-        report.apiDesign.backwardCompatibility.forEach(bc => {
-          summary += `- ${bc.change} in ${bc.endpoint} - ${bc.impact}\n`;
-        });
-      }
-    }
-
-    if (report.complexity && report.complexity.hotspots.length > 0) {
-      summary += `\n## Code Complexity\n\n`;
-      summary += `**Complexity Hotspots:** ${report.complexity.hotspots.length}\n`;
-      summary += `**Average Cyclomatic Complexity:** ${report.complexity.averageMetrics.cyclomaticComplexity.toFixed(2)}\n`;
-      summary += `**Average Cognitive Complexity:** ${report.complexity.averageMetrics.cognitiveComplexity.toFixed(2)}\n`;
-      summary += `**Maintainability Index:** ${report.complexity.averageMetrics.maintainabilityIndex.toFixed(1)}\n`;
-      if (report.complexity.hotspots.length > 0) {
-        summary += `\n**Top Hotspots:**\n`;
-        report.complexity.hotspots.slice(0, 5).forEach(h => {
-          summary += `- ${h.method} in ${h.file} (complexity: ${h.complexity}) - ${h.severity}\n`;
-        });
-      }
-    }
-
-    if (report.testCoverage) {
       summary += `\n## Test Coverage\n\n`;
       summary += `**Line Coverage:** ${report.testCoverage.coverage.lineCoverage}%\n`;
       summary += `**Branch Coverage:** ${report.testCoverage.coverage.branchCoverage}%\n`;
@@ -1259,6 +1178,7 @@ export class EnterpriseReviewer {
     }
     
     return summary;
+  }
   }
 
   /**
