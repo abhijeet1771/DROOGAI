@@ -48,24 +48,12 @@ export class CommentPoster {
       commentsByFile.get(comment.file)!.push(comment);
     }
 
-    // Post comments with rate limiting
-    // Post high/critical as inline, medium/low as summary
+    // Post ALL risk-focused comments as inline comments (not just high/critical)
+    // All comments that passed filterRiskFocusedComments are important enough to post
     for (const [file, fileComments] of commentsByFile) {
-      // Separate high/critical from medium/low
-      const highSeverityComments = fileComments.filter((c) => {
-        const sev = (c.severity || '').toLowerCase();
-        return sev === 'high' || sev === 'critical';
-      });
-      
-      const mediumLowComments = fileComments.filter((c) => {
-        const sev = (c.severity || '').toLowerCase();
-        return sev !== 'high' && sev !== 'critical';
-      });
-      
-      // Post high/critical as inline comments (up to 20 per file)
-      if (highSeverityComments.length > 0) {
-        console.log(`  📌 Found ${highSeverityComments.length} high/critical comment(s) for ${file} - posting as inline comments...`);
-        for (const comment of highSeverityComments.slice(0, 20)) {
+      if (fileComments.length > 0) {
+        console.log(`  📌 Found ${fileComments.length} risk-focused comment(s) for ${file} - posting as inline comments...`);
+        for (const comment of fileComments.slice(0, 20)) { // Limit to 20 per file to avoid spam
           try {
             console.log(`  📤 Attempting to post inline comment on ${comment.file}:${comment.line}...`);
             await this.github.postReviewComment(
@@ -91,10 +79,6 @@ export class CommentPoster {
           }
         }
       }
-      
-      // REMOVED: Per-file summary comments
-      // We now only post consolidated PR-level summary (handled separately)
-      // No per-file summaries to avoid clutter
     }
 
     console.log('\n✓ Finished posting comments.');
