@@ -237,22 +237,9 @@ jobs:
             echo "   Creating minimal index file as fallback..."
             
             TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-            cat > .droog-embeddings.json << EOF
-{
-  "version": "1.0",
-  "repository": "${{ github.repository }}",
-  "branch": "${BASE_BRANCH}",
-  "timestamp": "${TIMESTAMP}",
-  "embeddings": [],
-  "metadata": {
-    "note": "Minimal index created due to indexing failure",
-    "error": "${LAST_ERROR}",
-    "files_indexed": 0,
-    "symbols_indexed": 0,
-    "retries_attempted": ${MAX_RETRIES}
-  }
-}
-EOF
+            # Escape LAST_ERROR for JSON
+            ESCAPED_ERROR=$(echo "${LAST_ERROR}" | sed 's/"/\\"/g')
+            echo "{\"version\":\"1.0\",\"repository\":\"${{ github.repository }}\",\"branch\":\"${BASE_BRANCH}\",\"timestamp\":\"${TIMESTAMP}\",\"embeddings\":[],\"metadata\":{\"note\":\"Minimal index created due to indexing failure\",\"error\":\"${ESCAPED_ERROR}\",\"files_indexed\":0,\"symbols_indexed\":0,\"retries_attempted\":${MAX_RETRIES}}}" > .droog-embeddings.json
             echo "   ✅ Minimal index file created"
           fi
           
