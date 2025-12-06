@@ -192,7 +192,9 @@ export class CommentPoster {
     // 2. Human suggestion (respectful, soft)
     if (suggestion) {
       formatted += `Here's how I'd approach this:\n\n`;
-      formatted += `\`\`\`java\n${suggestion}\n\`\`\`\n`;
+      // Clean suggestion: remove imports, extract only relevant code
+      const cleanedSuggestion = this.cleanCodeSuggestion(suggestion, comment.line);
+      formatted += `\`\`\`java\n${cleanedSuggestion}\n\`\`\`\n`;
     }
     
     return formatted;
@@ -262,7 +264,12 @@ export class CommentPoster {
       return prefix + "Here's";
     });
 
-    // 12. Fix "i noticed" -> "I noticed" at start
+    // 12. Fix duplicate "I noticed" patterns (e.g., "I noticed this i noticed this")
+    text = text.replace(/\bi\s+noticed\s+this\s+i\s+noticed/gi, 'I noticed');
+    text = text.replace(/\bI\s+noticed\s+this\s+I\s+noticed/gi, 'I noticed');
+    text = text.replace(/\bI\s+noticed\s+this\s+i\s+noticed/gi, 'I noticed');
+    
+    // 12.1 Fix "i noticed" -> "I noticed" at start
     text = text.replace(/^i\s+noticed/gi, 'I noticed');
 
     // 13. Fix double spaces
@@ -285,6 +292,64 @@ export class CommentPoster {
     }
 
     return text.trim();
+  }
+
+  /**
+   * Clean code suggestion: remove imports, extract only relevant code block
+   */
+  private cleanCodeSuggestion(suggestion: string, issueLine: number): string {
+    if (!suggestion || suggestion.trim().length === 0) {
+      return suggestion;
+    }
+
+    let cleaned = suggestion;
+
+    // 1. Remove import statements (they belong at file top, not in method body)
+    // Match: "import package.name.Class;" or "import static package.name.Class;"
+    cleaned = cleaned.replace(/^import\s+(?:static\s+)?[\w.*]+\s*;?\s*$/gm, '');
+    
+    // 2. Remove any lines that are just imports (handle multi-line)
+    const lines = cleaned.split('\n');
+    const filteredLines: string[] = [];
+    let inImportBlock = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Skip import statements
+      if (line.startsWith('import ') || line.startsWith('import static ')) {
+        inImportBlock = true;
+        continue;
+      }
+      
+      // If we were in import block and hit empty line, skip it too
+      if (inImportBlock && line === '') {
+        inImportBlock = false;
+        continue;
+      }
+      
+      inImportBlock = false;
+      filteredLines.push(lines[i]); // Keep original line (with indentation)
+    }
+    
+    cleaned = filteredLines.join('\n');
+
+    // 3. Remove code fragments that don't belong (like ".orElse(null);" at start)
+    // If suggestion starts with a method call or statement fragment, try to find method start
+    const trimmed = cleaned.trim();
+    if (trimmed.startsWith('.') || trimmed.match(/^[a-z]\w*\s*\(/)) {
+      // This looks like a code fragment, try to find the method/block start
+      const methodMatch = cleaned.match(/(?:public|private|protected)?\s*(?:static)?\s*\w+\s+\w+\s*\([^)]*\)\s*\{/);
+      if (methodMatch) {
+        const methodStart = cleaned.indexOf(methodMatch[0]);
+        cleaned = cleaned.substring(methodStart);
+      }
+    }
+
+    // 4. Remove leading/trailing empty lines
+    cleaned = cleaned.replace(/^\s*\n+/, '').replace(/\n+\s*$/, '');
+
+    return cleaned.trim();
   }
 
   /**

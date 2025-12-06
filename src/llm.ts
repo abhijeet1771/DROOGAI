@@ -97,12 +97,13 @@ Analyze the code diffs based on these comprehensive criteria:
 Return ONLY a valid JSON array. Do not wrap in markdown code blocks.
 
 IMPORTANT - Suggestion Format:
-- Provide COMPLETE updated method/code block in suggestions, not just instructions
-- If issue is in a method, show the ENTIRE method with fix applied (from method start to end)
-- Include full method signature, body, and closing brace
-- Show complete code so developer can copy-paste directly
-- Example: Instead of "add null check on line 10", show the complete method with null check added
-- For multi-line fixes, show the complete updated code block
+- Provide the code block that needs to change, starting from the issue line
+- If issue is in a method, show the method with fix applied (from method signature to closing brace)
+- DO NOT include import statements - imports belong at file top, not in method body
+- DO NOT include code from before the issue line (only show the method/block containing the issue)
+- Show complete method/block so developer can see the fix in context
+- Example: If issue is at line 85 in a method, show the complete method starting from method signature
+- For multi-line fixes, show the complete updated code block (method or relevant block)
 
 [
   {

@@ -1741,27 +1741,45 @@ export class EnterpriseReviewer {
         // Show what actually changed based on changeType
         summary += `**What changed:**\n`;
         if (bc.changeType === 'visibility') {
-          // For visibility changes, show visibility, not signature
-          const visMatch = bc.message?.match(/(\w+)\s*→\s*(\w+)/);
+          // For visibility changes, extract from message (format: "Visibility reduced: public → private")
+          const visMatch = bc.message?.match(/(?:Visibility\s+reduced|visibility):\s*(\w+)\s*→\s*(\w+)/i);
           if (visMatch) {
             summary += `- **Before:** \`${visMatch[1]}\` visibility\n`;
             summary += `- **After:** \`${visMatch[2]}\` visibility\n`;
           } else {
-            summary += `- **Visibility changed:** ${bc.message || 'Visibility reduced'}\n`;
+            // Try generic arrow format
+            const arrowMatch = bc.message?.match(/(\w+)\s*→\s*(\w+)/);
+            if (arrowMatch) {
+              summary += `- **Before:** \`${arrowMatch[1]}\` visibility\n`;
+              summary += `- **After:** \`${arrowMatch[2]}\` visibility\n`;
+            } else {
+              summary += `- **Visibility changed:** ${bc.message || 'Visibility reduced'}\n`;
+            }
           }
         } else if (bc.changeType === 'return_type') {
-          // For return type changes, show return type
-          const rtMatch = bc.message?.match(/(\w+)\s*→\s*(\w+)/);
+          // For return type changes, extract from message (format: "Return type changed: int → String")
+          const rtMatch = bc.message?.match(/(?:Return\s+type\s+changed|return\s+type):\s*(\w+)\s*→\s*(\w+)/i);
           if (rtMatch) {
             summary += `- **Before:** Return type \`${rtMatch[1]}\`\n`;
             summary += `- **After:** Return type \`${rtMatch[2]}\`\n`;
           } else {
-            summary += `- **Return type changed:** ${bc.message || 'Return type modified'}\n`;
+            // Try generic arrow format
+            const arrowMatch = bc.message?.match(/(\w+)\s*→\s*(\w+)/);
+            if (arrowMatch) {
+              summary += `- **Before:** Return type \`${arrowMatch[1]}\`\n`;
+              summary += `- **After:** Return type \`${arrowMatch[2]}\`\n`;
+            } else {
+              summary += `- **Return type changed:** ${bc.message || 'Return type modified'}\n`;
+            }
           }
         } else if (bc.changeType === 'signature') {
           // For signature changes, show signature
-          summary += `- **Before:** \`${bc.oldSignature || 'N/A'}\`\n`;
-          summary += `- **After:** \`${bc.newSignature || 'N/A'}\`\n`;
+          if (bc.oldSignature && bc.newSignature && bc.oldSignature !== bc.newSignature) {
+            summary += `- **Before:** \`${bc.oldSignature}\`\n`;
+            summary += `- **After:** \`${bc.newSignature}\`\n`;
+          } else {
+            summary += `- **Signature changed:** ${bc.message || 'Method signature modified'}\n`;
+          }
         } else {
           // Fallback: show message
           summary += `- **Change:** ${bc.message || 'Breaking change detected'}\n`;
