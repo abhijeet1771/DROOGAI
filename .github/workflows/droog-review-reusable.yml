@@ -118,18 +118,48 @@ jobs:
           fi
           echo "✅ .droog-ai directory verified - dist/index.js found"
       
-      # Step 7: Load index if exists (from calling repo)
-      - name: Load index if exists
-        id: load-index
+      # Step 7: Index main/master branch before review
+      - name: Index main branch for review
+        id: index-repo
+        working-directory: .droog-ai
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          if [ -f "repo/.droog-embeddings.json" ]; then
+          echo "📦 Indexing main/master branch for review..."
+          
+          # Determine base branch - try main first, then master
+          BASE_BRANCH="main"
+          
+          # Check which branch exists using GitHub API
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}" || echo "")
+          
+          if [ -n "$RESPONSE" ]; then
+            DEFAULT_BRANCH=$(echo "$RESPONSE" | grep -o '"default_branch":"[^"]*"' | cut -d'"' -f4 || echo "")
+            if [ -n "$DEFAULT_BRANCH" ]; then
+              BASE_BRANCH="$DEFAULT_BRANCH"
+            fi
+          fi
+          
+          echo "   Using base branch: ${BASE_BRANCH}"
+          echo "   Repository: ${{ github.repository }}"
+          
+          # Index the repository
+          node dist/index.js index --repo "${{ github.repository }}" --branch "${BASE_BRANCH}" || {
+            echo "⚠️  Indexing failed, continuing without index"
+            echo "index_exists=false" >> $GITHUB_OUTPUT
+            exit 0
+          }
+          
+          # Check if index was created
+          if [ -f ".droog-embeddings.json" ]; then
             echo "index_exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Codebase index found"
-            # Copy index to .droog-ai for review tool to use
-            cp repo/.droog-embeddings.json .droog-ai/.droog-embeddings.json || true
+            echo "✅ Codebase index created successfully"
+            ls -lh .droog-embeddings.json
           else
             echo "index_exists=false" >> $GITHUB_OUTPUT
-            echo "ℹ️  No codebase index found (will skip cross-repo duplicate detection)"
+            echo "⚠️  Index file not found after indexing"
           fi
         continue-on-error: true
       
