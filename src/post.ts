@@ -29,34 +29,30 @@ export class CommentPoster {
       return;
     }
 
-    // RISK-FOCUSED: Only post comments related to "what will break"
-    // Filter out traditional code review comments (security, maintainability, style)
-    const riskFocusedComments = this.filterRiskFocusedComments(comments);
-    
-    if (riskFocusedComments.length === 0) {
-      console.log('\n✓ No risk-focused comments to post (no breaking changes detected).');
-      return;
-    }
-
-    console.log(`\n📤 Posting ${riskFocusedComments.length} risk-focused comment(s) to GitHub...\n`);
+    // Post ALL comments (high/medium/low) as inline comments
+    // Only spam prevention: max 20 comments per file
+    console.log(`\n📤 Posting ${comments.length} comment(s) to GitHub...\n`);
 
     // Group comments by file to avoid spam
     const commentsByFile = new Map<string, ReviewComment[]>();
-    for (const comment of riskFocusedComments) {
+    for (const comment of comments) {
       if (!commentsByFile.has(comment.file)) {
         commentsByFile.set(comment.file, []);
       }
       commentsByFile.get(comment.file)!.push(comment);
     }
 
-    // Post ALL risk-focused comments as inline comments (not just high/critical)
-    // All comments that passed filterRiskFocusedComments are important enough to post
+    // Post ALL comments as inline comments (high/medium/low)
+    // Spam prevention: max 20 comments per file
     for (const [file, fileComments] of commentsByFile) {
       if (fileComments.length > 0) {
-        console.log(`  📌 Found ${fileComments.length} risk-focused comment(s) for ${file} - posting as inline comments...`);
-        for (const comment of fileComments.slice(0, 20)) { // Limit to 20 per file to avoid spam
+        const commentsToPost = fileComments.slice(0, 20); // Limit to 20 per file to avoid spam
+        console.log(`  📌 Found ${fileComments.length} comment(s) for ${file} - posting ${commentsToPost.length} as inline comments...`);
+        
+        for (const comment of commentsToPost) {
           try {
-            console.log(`  📤 Attempting to post inline comment on ${comment.file}:${comment.line}...`);
+            const severity = (comment.severity || 'medium').toUpperCase();
+            console.log(`  📤 Posting [${severity}] comment on ${comment.file}:${comment.line}...`);
             await this.github.postReviewComment(
               this.owner,
               this.repo,
@@ -78,6 +74,10 @@ export class CommentPoster {
               console.error(`     Response: ${JSON.stringify(error.response.data)}`);
             }
           }
+        }
+        
+        if (fileComments.length > 20) {
+          console.log(`  ⚠️  ${fileComments.length - 20} more comment(s) skipped for ${file} (spam prevention limit)`);
         }
       }
     }
