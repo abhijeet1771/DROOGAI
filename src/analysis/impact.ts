@@ -271,8 +271,8 @@ export class ImpactAnalyzer {
     try {
       const { GoogleGenerativeAI } = await import('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(this.geminiKey);
-      // Use gemini-2.5-pro to match other parts of codebase
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+      // Use gemini-2.5-flash-live to match other parts of codebase
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-live' });
 
       const prompt = `You are a Senior Software Architect analyzing a Pull Request for potential breakage.
 

@@ -111,7 +111,7 @@ export class LLMReviewer {
 
   constructor(apiKey: string) {
     const genAI = new GoogleGenerativeAI(apiKey);
-    this.model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+    this.model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-live' });
   }
 
   async reviewDiff(filepath: string, diff: string, retryCount = 0): Promise<ReviewComment[]> {

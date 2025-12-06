@@ -26,7 +26,7 @@ export class EmbeddingGenerator {
     // Note: Gemini doesn't have dedicated embedding model, using text-embedding-004 or similar
     // For now, we'll use a workaround with the generative model
     this.model = this.genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-pro',
+      model: 'gemini-2.5-flash-live',
       generationConfig: { temperature: 0 }
     });
   }
@@ -158,6 +158,9 @@ export class EmbeddingGenerator {
     return dotProduct / (magnitude1 * magnitude2);
   }
 }
+
+
+
 
 
 
