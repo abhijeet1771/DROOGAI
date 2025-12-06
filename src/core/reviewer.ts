@@ -978,7 +978,7 @@ export class EnterpriseReviewer {
     summary += `**Merge Risk**: ${riskLevel}\n\n`;
     
     // Impact on main branch
-    summary += `**If merged, main branch will experience:**\n\n`;
+    summary += `**If this PR is merged, the main branch will experience:**\n\n`;
     
     // Build impact list FIRST (right after header)
     const impacts: string[] = [];
@@ -1031,7 +1031,6 @@ export class EnterpriseReviewer {
     // 1. Impact Analysis - What will break?
     if (report.impactAnalysis && report.impactAnalysis.impactedFiles.length > 0) {
       summary += `## 🚨 What Will Break?\n\n`;
-      summary += `**This PR will impact ${report.impactAnalysis.impactedFiles.length} file(s) in the codebase.**\n\n`;
       
       if (report.impactAnalysis.impactedFeatures.length > 0) {
         summary += `### Affected Features (Will Break/Fail)\n\n`;
@@ -1049,11 +1048,39 @@ export class EnterpriseReviewer {
           
           if (feature.impactedAreas.length > 0) {
             summary += `**Exact locations where it's being called (will fail here):**\n`;
-            feature.impactedAreas.slice(0, 10).forEach((area: any) => {
-              summary += `- \`${area.file}:${area.line}\` - \`${area.method}()\` calls modified code\n`;
+            
+            // Deduplicate by file:line but preserve all methods/reasons
+            const deduplicatedAreas = new Map<string, { file: string; line: number; methods: Set<string>; reasons: string[] }>();
+            feature.impactedAreas.forEach((area: any) => {
+              const key = `${area.file}:${area.line}`;
+              if (!deduplicatedAreas.has(key)) {
+                deduplicatedAreas.set(key, {
+                  file: area.file,
+                  line: area.line,
+                  methods: new Set<string>(),
+                  reasons: []
+                });
+              }
+              const entry = deduplicatedAreas.get(key)!;
+              if (area.method) entry.methods.add(area.method);
+              if (area.reason && !entry.reasons.includes(area.reason)) {
+                entry.reasons.push(area.reason);
+              }
             });
-            if (feature.impactedAreas.length > 10) {
-              summary += `- ... and ${feature.impactedAreas.length - 10} more locations\n`;
+            
+            // Display deduplicated areas
+            const areasArray = Array.from(deduplicatedAreas.values()).slice(0, 10);
+            areasArray.forEach((area) => {
+              const methodsList = Array.from(area.methods).join(', ');
+              summary += `- \`${area.file}:${area.line}\` - \`${methodsList}()\` calls modified code`;
+              if (area.reasons.length > 0) {
+                summary += ` (${area.reasons.join('; ')})`;
+              }
+              summary += `\n`;
+            });
+            
+            if (deduplicatedAreas.size > 10) {
+              summary += `- ... and ${deduplicatedAreas.size - 10} more location(s)\n`;
             }
             summary += `\n`;
           }
@@ -1077,10 +1104,50 @@ export class EnterpriseReviewer {
       summary += `**${report.testImpact.failingTests.length} test case(s) will fail** if this PR is merged.\n\n`;
       
       summary += `### Tests That Will Break:\n\n`;
-      report.testImpact.failingTests.forEach((test: any, index: number) => {
-        summary += `${index + 1}. **\`${test.testFile}::${test.testMethod}\`** - ${test.probability.toUpperCase()} chance of failure\n`;
-        summary += `   - **Why it will fail:** ${test.reason}\n`;
-        summary += `   - **What to fix:** ${test.suggestion}\n\n`;
+      
+      // Deduplicate test failures by testFile::testMethod but preserve all reasons
+      const deduplicatedTests = new Map<string, { testFile: string; testMethod: string; reasons: string[]; suggestions: string[]; probabilities: string[] }>();
+      report.testImpact.failingTests.forEach((test: any) => {
+        const key = `${test.testFile}::${test.testMethod}`;
+        if (!deduplicatedTests.has(key)) {
+          deduplicatedTests.set(key, {
+            testFile: test.testFile,
+            testMethod: test.testMethod,
+            reasons: [],
+            suggestions: [],
+            probabilities: []
+          });
+        }
+        const entry = deduplicatedTests.get(key)!;
+        if (test.reason && !entry.reasons.includes(test.reason)) {
+          entry.reasons.push(test.reason);
+        }
+        if (test.suggestion && !entry.suggestions.includes(test.suggestion)) {
+          entry.suggestions.push(test.suggestion);
+        }
+        if (test.probability && !entry.probabilities.includes(test.probability.toUpperCase())) {
+          entry.probabilities.push(test.probability.toUpperCase());
+        }
+      });
+      
+      // Display deduplicated tests
+      let testIndex = 1;
+      deduplicatedTests.forEach((test) => {
+        const highestProbability = test.probabilities.length > 0 ? test.probabilities[0] : 'HIGH';
+        summary += `${testIndex}. **\`${test.testFile}::${test.testMethod}\`** - ${highestProbability} chance of failure\n`;
+        
+        // Combine all reasons if multiple
+        if (test.reasons.length > 0) {
+          summary += `   - **Why it will fail:** ${test.reasons.join('; ')}\n`;
+        }
+        
+        // Combine all suggestions if multiple
+        if (test.suggestions.length > 0) {
+          summary += `   - **What to fix:** ${test.suggestions.join('; ')}\n`;
+        }
+        
+        summary += `\n`;
+        testIndex++;
       });
       
       if (report.testImpact.affectedTests.length > 0) {
@@ -1482,14 +1549,48 @@ export class EnterpriseReviewer {
       
       if (report.codebaseKnowledge.reusableMethods.length > 0) {
         summary += `### Reusable Methods\n\n`;
-        report.codebaseKnowledge.reusableMethods.slice(0, 5).forEach((suggestion: any, index: number) => {
-          summary += `${index + 1}. **\`${suggestion.element}\`** in \`${suggestion.file}\`\n`;
-          summary += `   - **Suggestion:** ${suggestion.suggestion}\n`;
-          summary += `   - **Existing:** \`${suggestion.existingLocation}\`\n`;
-          if (suggestion.similarity) {
-            summary += `   - **Similarity:** ${(suggestion.similarity * 100).toFixed(0)}%\n`;
+        
+        // Deduplicate by element+file but preserve all suggestions and existing locations
+        const deduplicatedMethods = new Map<string, { element: string; file: string; suggestions: string[]; existingLocations: string[]; similarities: number[] }>();
+        report.codebaseKnowledge.reusableMethods.forEach((suggestion: any) => {
+          const key = `${suggestion.element}::${suggestion.file}`;
+          if (!deduplicatedMethods.has(key)) {
+            deduplicatedMethods.set(key, {
+              element: suggestion.element,
+              file: suggestion.file,
+              suggestions: [],
+              existingLocations: [],
+              similarities: []
+            });
+          }
+          const entry = deduplicatedMethods.get(key)!;
+          if (suggestion.suggestion && !entry.suggestions.includes(suggestion.suggestion)) {
+            entry.suggestions.push(suggestion.suggestion);
+          }
+          if (suggestion.existingLocation && !entry.existingLocations.includes(suggestion.existingLocation)) {
+            entry.existingLocations.push(suggestion.existingLocation);
+          }
+          if (suggestion.similarity && !entry.similarities.includes(suggestion.similarity)) {
+            entry.similarities.push(suggestion.similarity);
+          }
+        });
+        
+        // Display deduplicated methods
+        let methodIndex = 1;
+        Array.from(deduplicatedMethods.values()).slice(0, 5).forEach((method) => {
+          summary += `${methodIndex}. **\`${method.element}\`** in \`${method.file}\`\n`;
+          if (method.suggestions.length > 0) {
+            summary += `   - **Suggestion:** ${method.suggestions.join('; ')}\n`;
+          }
+          if (method.existingLocations.length > 0) {
+            summary += `   - **Existing:** \`${method.existingLocations.join('`, `')}\`\n`;
+          }
+          if (method.similarities.length > 0) {
+            const avgSimilarity = method.similarities.reduce((a, b) => a + b, 0) / method.similarities.length;
+            summary += `   - **Similarity:** ${(avgSimilarity * 100).toFixed(0)}%\n`;
           }
           summary += `\n`;
+          methodIndex++;
         });
       }
 
@@ -1509,9 +1610,38 @@ export class EnterpriseReviewer {
       
       if (report.dependencyMap.circularDependencies.length > 0) {
         summary += `### ⚠️ Circular Dependencies (Must Fix)\n\n`;
-        report.dependencyMap.circularDependencies.slice(0, 3).forEach((circular: any, index: number) => {
-          summary += `${index + 1}. ${circular.description}\n`;
-          summary += `   - **Files:** ${circular.files.join(' ↔ ')}\n\n`;
+        
+        // Deduplicate circular dependencies by file pair (normalize order)
+        const deduplicatedCircular = new Map<string, { files: string[]; descriptions: string[] }>();
+        report.dependencyMap.circularDependencies.forEach((circular: any) => {
+          // Normalize file pair order (file1 ↔ file2 = file2 ↔ file1)
+          const files = circular.files || [];
+          const sortedFiles = [...files].sort();
+          const key = sortedFiles.join(' ↔ ');
+          
+          if (!deduplicatedCircular.has(key)) {
+            deduplicatedCircular.set(key, {
+              files: files,
+              descriptions: []
+            });
+          }
+          const entry = deduplicatedCircular.get(key)!;
+          if (circular.description && !entry.descriptions.includes(circular.description)) {
+            entry.descriptions.push(circular.description);
+          }
+        });
+        
+        // Display deduplicated circular dependencies
+        let circularIndex = 1;
+        Array.from(deduplicatedCircular.values()).slice(0, 3).forEach((circular) => {
+          const description = circular.descriptions.length > 0 ? circular.descriptions[0] : 'Circular dependency detected';
+          summary += `${circularIndex}. ${description}\n`;
+          summary += `   - **Files:** ${circular.files.join(' ↔ ')}\n`;
+          if (circular.descriptions.length > 1) {
+            summary += `   - **Additional details:** ${circular.descriptions.slice(1).join('; ')}\n`;
+          }
+          summary += `\n`;
+          circularIndex++;
         });
       }
 
@@ -1608,11 +1738,35 @@ export class EnterpriseReviewer {
         summary += `### ${index + 1}. \`${bc.file}::${bc.symbol}\` - ${bc.changeType.toUpperCase()}\n`;
         summary += `**Status:** 🔴 **WILL BREAK**\n\n`;
         
-        if (bc.oldSignature || bc.newSignature) {
-          summary += `**What changed:**\n`;
+        // Show what actually changed based on changeType
+        summary += `**What changed:**\n`;
+        if (bc.changeType === 'visibility') {
+          // For visibility changes, show visibility, not signature
+          const visMatch = bc.message?.match(/(\w+)\s*→\s*(\w+)/);
+          if (visMatch) {
+            summary += `- **Before:** \`${visMatch[1]}\` visibility\n`;
+            summary += `- **After:** \`${visMatch[2]}\` visibility\n`;
+          } else {
+            summary += `- **Visibility changed:** ${bc.message || 'Visibility reduced'}\n`;
+          }
+        } else if (bc.changeType === 'return_type') {
+          // For return type changes, show return type
+          const rtMatch = bc.message?.match(/(\w+)\s*→\s*(\w+)/);
+          if (rtMatch) {
+            summary += `- **Before:** Return type \`${rtMatch[1]}\`\n`;
+            summary += `- **After:** Return type \`${rtMatch[2]}\`\n`;
+          } else {
+            summary += `- **Return type changed:** ${bc.message || 'Return type modified'}\n`;
+          }
+        } else if (bc.changeType === 'signature') {
+          // For signature changes, show signature
           summary += `- **Before:** \`${bc.oldSignature || 'N/A'}\`\n`;
-          summary += `- **After:** \`${bc.newSignature || 'N/A'}\`\n\n`;
+          summary += `- **After:** \`${bc.newSignature || 'N/A'}\`\n`;
+        } else {
+          // Fallback: show message
+          summary += `- **Change:** ${bc.message || 'Breaking change detected'}\n`;
         }
+        summary += `\n`;
         
         if (bc.impactScore !== undefined) {
           summary += `**Impact Score:** ${bc.impactScore}/100 (${bc.impactScore >= 70 ? 'HIGH' : bc.impactScore >= 40 ? 'MEDIUM' : 'LOW'} impact)\n\n`;
@@ -1693,8 +1847,9 @@ export class EnterpriseReviewer {
       summary += `\n## Documentation\n\n`;
       summary += `**Quality Score:** ${report.documentation.qualityScore}/100\n`;
       summary += `**Coverage:** Classes ${report.documentation.coverage.classes}%, Methods ${report.documentation.coverage.methods}%, Public Methods ${report.documentation.coverage.publicMethods}%\n`;
+      // Don't count documentation issues as "issues" - it's a quality metric, not a bug
       if (report.documentation.issues.length > 0) {
-        summary += `**Issues:** ${report.documentation.issues.length}\n`;
+        summary += `**Documentation gaps:** ${report.documentation.issues.length} (missing docs, not code issues)\n`;
       }
     }
 
@@ -1850,11 +2005,35 @@ export class EnterpriseReviewer {
         summary += `### ${index + 1}. \`${bc.file}::${bc.symbol}\` - ${bc.changeType.toUpperCase()}\n`;
         summary += `**Status:** 🔴 **WILL BREAK**\n\n`;
         
-        if (bc.oldSignature || bc.newSignature) {
-          summary += `**What changed:**\n`;
+        // Show what actually changed based on changeType
+        summary += `**What changed:**\n`;
+        if (bc.changeType === 'visibility') {
+          // For visibility changes, show visibility, not signature
+          const visMatch = bc.message?.match(/(\w+)\s*→\s*(\w+)/);
+          if (visMatch) {
+            summary += `- **Before:** \`${visMatch[1]}\` visibility\n`;
+            summary += `- **After:** \`${visMatch[2]}\` visibility\n`;
+          } else {
+            summary += `- **Visibility changed:** ${bc.message || 'Visibility reduced'}\n`;
+          }
+        } else if (bc.changeType === 'return_type') {
+          // For return type changes, show return type
+          const rtMatch = bc.message?.match(/(\w+)\s*→\s*(\w+)/);
+          if (rtMatch) {
+            summary += `- **Before:** Return type \`${rtMatch[1]}\`\n`;
+            summary += `- **After:** Return type \`${rtMatch[2]}\`\n`;
+          } else {
+            summary += `- **Return type changed:** ${bc.message || 'Return type modified'}\n`;
+          }
+        } else if (bc.changeType === 'signature') {
+          // For signature changes, show signature
           summary += `- **Before:** \`${bc.oldSignature || 'N/A'}\`\n`;
-          summary += `- **After:** \`${bc.newSignature || 'N/A'}\`\n\n`;
+          summary += `- **After:** \`${bc.newSignature || 'N/A'}\`\n`;
+        } else {
+          // Fallback: show message
+          summary += `- **Change:** ${bc.message || 'Breaking change detected'}\n`;
         }
+        summary += `\n`;
         
         if (bc.impactScore !== undefined) {
           summary += `**Impact Score:** ${bc.impactScore}/100 (${bc.impactScore >= 70 ? 'HIGH' : bc.impactScore >= 40 ? 'MEDIUM' : 'LOW'} impact)\n\n`;
