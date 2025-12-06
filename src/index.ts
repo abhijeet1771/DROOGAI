@@ -133,6 +133,10 @@ async function runLegacyReview(options: any) {
     process.exit(1);
   }
 
+  // Log which API key is being used (masked for security)
+  const maskedKey = geminiKey.length > 10 ? `${geminiKey.substring(0, 10)}...${geminiKey.substring(geminiKey.length - 4)}` : '***';
+  console.log(`🔑 Using Gemini API Key: ${maskedKey} (source: ${options.geminiKey ? 'command-line' : 'environment variable'})`);
+
   if (options.enterprise) {
     await runEnterpriseReview(owner, repo, prNumber, githubToken, geminiKey, options.post, options.autoFix, options.autoApply);
   } else {

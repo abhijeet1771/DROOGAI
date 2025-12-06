@@ -226,6 +226,9 @@ export class EnterpriseReviewer {
   
   constructor(geminiKey: string, githubToken: string) {
     this.geminiKey = geminiKey;
+    // Log API key being used (masked)
+    const maskedKey = geminiKey.length > 10 ? `${geminiKey.substring(0, 10)}...${geminiKey.substring(geminiKey.length - 4)}` : '***';
+    console.log(`🔑 EnterpriseReviewer initialized with Gemini Key: ${maskedKey}`);
     this.reviewProcessor = new ReviewProcessor(geminiKey);
     this.indexer = new CodebaseIndexer();
     this.extractor = new CodeExtractor();
