@@ -78,7 +78,7 @@ export class RecommendationGenerator {
   constructor(apiKey: string) {
     const genAI = new GoogleGenerativeAI(apiKey);
     this.model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.5-flash-live',
+      model: 'gemini-2.5-pro',
       generationConfig: { temperature: 0.3 } // Lower temperature for more focused recommendations
     });
   }
