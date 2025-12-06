@@ -20,6 +20,16 @@ on:
         required: false
         type: boolean
         default: true
+      auto_fix:
+        description: 'Generate auto-fix suggestions'
+        required: false
+        type: boolean
+        default: false
+      auto_apply:
+        description: 'Automatically apply low-risk fixes'
+        required: false
+        type: boolean
+        default: false
     secrets:
       GEMINI_API_KEY:
         required: true
@@ -106,14 +116,26 @@ jobs:
         run: |
           PR_NUMBER="${{ inputs.pr_number }}"
           POST_FLAG=""
+          AUTO_FIX_FLAG=""
+          AUTO_APPLY_FLAG=""
+          
           if [ "${{ inputs.post_comments }}" = "true" ]; then
             POST_FLAG="--post"
           fi
           
+          if [ "${{ inputs.auto_fix }}" = "true" ]; then
+            AUTO_FIX_FLAG="--auto-fix"
+          fi
+          
+          if [ "${{ inputs.auto_apply }}" = "true" ]; then
+            AUTO_APPLY_FLAG="--auto-apply"
+          fi
+          
           echo "🚀 Running DroogAI review on ${{ github.repository }} PR #${PR_NUMBER}"
+          echo "   Flags: --enterprise ${POST_FLAG} ${AUTO_FIX_FLAG} ${AUTO_APPLY_FLAG}"
           
           # Run review with enterprise features enabled
-          node dist/index.js review --repo "${{ github.repository }}" --pr "${PR_NUMBER}" --enterprise ${POST_FLAG} || true
+          node dist/index.js review --repo "${{ github.repository }}" --pr "${PR_NUMBER}" --enterprise ${POST_FLAG} ${AUTO_FIX_FLAG} ${AUTO_APPLY_FLAG} || true
           
           # Copy report.json to calling repo root for artifact upload
           if [ -f "report.json" ]; then
