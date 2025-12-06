@@ -101,6 +101,22 @@ jobs:
         with:
           fetch-depth: 0
       
+      # Step 6.5: Verify .droog-ai still exists after checkout
+      - name: Verify .droog-ai directory exists
+        run: |
+          if [ ! -d ".droog-ai" ]; then
+            echo "❌ .droog-ai directory not found after checkout"
+            echo "Current directory: $(pwd)"
+            echo "Contents of workspace:"
+            ls -la
+            exit 1
+          fi
+          if [ ! -f ".droog-ai/dist/index.js" ]; then
+            echo "❌ DroogAI build not found in .droog-ai/dist/index.js"
+            exit 1
+          fi
+          echo "✅ .droog-ai directory verified - dist/index.js found"
+      
       # Step 7: Load index if exists (from calling repo)
       - name: Load index if exists
         id: load-index
@@ -117,11 +133,20 @@ jobs:
       # Step 8: Run DroogAI Review on calling repository
       - name: Run DroogAI Review
         id: review
-        working-directory: .droog-ai
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Verify .droog-ai exists and change to it
+          if [ ! -d ".droog-ai" ]; then
+            echo "❌ .droog-ai directory not found"
+            echo "Current directory: $(pwd)"
+            ls -la
+            exit 1
+          fi
+          cd .droog-ai
+          echo "✅ Changed to .droog-ai directory: $(pwd)"
+          
           PR_NUMBER="${{ inputs.pr_number }}"
           POST_FLAG=""
           AUTO_FIX_FLAG=""
@@ -146,7 +171,7 @@ jobs:
           node dist/index.js review --repo "${{ github.repository }}" --pr "${PR_NUMBER}" --enterprise ${POST_FLAG} ${AUTO_FIX_FLAG} ${AUTO_APPLY_FLAG} || true
           
           # Copy report.json to calling repo root for artifact upload
-          # Note: report.json is created in .droog-ai directory (current working-directory)
+          # Note: report.json is created in current directory (.droog-ai)
           if [ -f "report.json" ]; then
             cp report.json "${{ github.workspace }}/report.json"
             echo "✅ Review report generated and copied to workspace root"
