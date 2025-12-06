@@ -95,10 +95,11 @@ jobs:
           fi
           echo "✅ DroogAI built successfully"
       
-      # Step 6: Checkout calling repository (the repo being reviewed)
+      # Step 6: Checkout calling repository (the repo being reviewed) to preserve .droog-ai
       - name: Checkout calling repository
         uses: actions/checkout@v4
         with:
+          path: repo
           fetch-depth: 0
       
       # Step 6.5: Verify .droog-ai still exists after checkout
@@ -121,9 +122,11 @@ jobs:
       - name: Load index if exists
         id: load-index
         run: |
-          if [ -f ".droog-embeddings.json" ]; then
+          if [ -f "repo/.droog-embeddings.json" ]; then
             echo "index_exists=true" >> $GITHUB_OUTPUT
             echo "✅ Codebase index found"
+            # Copy index to .droog-ai for review tool to use
+            cp repo/.droog-embeddings.json .droog-ai/.droog-embeddings.json || true
           else
             echo "index_exists=false" >> $GITHUB_OUTPUT
             echo "ℹ️  No codebase index found (will skip cross-repo duplicate detection)"
@@ -170,7 +173,7 @@ jobs:
           # Run review with enterprise features enabled
           node dist/index.js review --repo "${{ github.repository }}" --pr "${PR_NUMBER}" --enterprise ${POST_FLAG} ${AUTO_FIX_FLAG} ${AUTO_APPLY_FLAG} || true
           
-          # Copy report.json to calling repo root for artifact upload
+          # Copy report.json to workspace root for artifact upload
           # Note: report.json is created in current directory (.droog-ai)
           if [ -f "report.json" ]; then
             cp report.json "${{ github.workspace }}/report.json"
