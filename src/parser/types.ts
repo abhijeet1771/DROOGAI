@@ -4,7 +4,7 @@
 
 export interface CodeSymbol {
   name: string;
-  type: 'function' | 'class' | 'method' | 'constructor' | 'variable' | 'interface' | 'enum';
+  type: 'function' | 'class' | 'method' | 'constructor' | 'variable' | 'interface' | 'enum' | 'field';
   file: string;
   startLine: number;
   endLine: number;
@@ -13,6 +13,9 @@ export interface CodeSymbol {
   returnType?: string;
   visibility?: 'public' | 'private' | 'protected' | 'package';
   isStatic?: boolean;
+  isConstant?: boolean;
+  extends?: string; // Parent class name
+  implements?: string[]; // Interfaces implemented
   code?: string; // Full code of the symbol
 }
 
