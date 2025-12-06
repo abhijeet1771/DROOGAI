@@ -118,7 +118,7 @@ jobs:
           fi
           echo "✅ .droog-ai directory verified - dist/index.js found"
       
-      # Step 7: Index main/master branch before review (with retry and fallback)
+      # Step 7: Index main/master branch before review (FORCE INDEX CREATION)
       - name: Index main branch for review
         id: index-repo
         working-directory: .droog-ai
@@ -126,82 +126,177 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          echo "📦 Indexing main/master branch for review..."
+          echo "=========================================="
+          echo "📦 FORCE INDEXING - Main/Master Branch"
+          echo "=========================================="
           echo "   Current directory: $(pwd)"
           echo "   Repository: ${{ github.repository }}"
+          echo "   Working directory contents:"
+          ls -la | head -10
+          
+          # Ensure we're in the right directory
+          if [ ! -f "dist/index.js" ]; then
+            echo "❌ ERROR: dist/index.js not found in $(pwd)"
+            echo "   Contents:"
+            ls -la
+            exit 1
+          fi
           
           # Determine base branch - try main first, then master
           BASE_BRANCH="main"
           
           # Check which branch exists using GitHub API
+          echo "   Checking default branch..."
           RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}" 2>/dev/null || echo "")
+            "https://api.github.com/repos/${{ github.repository }}" 2>&1)
           
-          if [ -n "$RESPONSE" ]; then
+          if [ $? -eq 0 ] && [ -n "$RESPONSE" ]; then
             DEFAULT_BRANCH=$(echo "$RESPONSE" | grep -o '"default_branch":"[^"]*"' | cut -d'"' -f4 || echo "")
             if [ -n "$DEFAULT_BRANCH" ]; then
               BASE_BRANCH="$DEFAULT_BRANCH"
             fi
+          else
+            echo "   ⚠️  Could not fetch default branch, using 'main'"
           fi
           
           echo "   Using base branch: ${BASE_BRANCH}"
+          echo ""
           
-          # Retry logic: Try indexing up to 3 times
+          # FORCE: Remove any existing index file to start fresh
+          if [ -f ".droog-embeddings.json" ]; then
+            echo "   Removing existing index file..."
+            rm -f .droog-embeddings.json
+          fi
+          
+          # Retry logic: Try indexing up to 3 times with detailed logging
           MAX_RETRIES=3
           RETRY_COUNT=0
           INDEX_SUCCESS=false
+          LAST_ERROR=""
           
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
             RETRY_COUNT=$((RETRY_COUNT + 1))
-            echo "   Attempt $RETRY_COUNT/$MAX_RETRIES..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "   🔄 INDEXING ATTEMPT $RETRY_COUNT/$MAX_RETRIES"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             
-            # Run indexing with timeout (5 minutes)
-            if timeout 300 node dist/index.js index --repo "${{ github.repository }}" --branch "${BASE_BRANCH}" 2>&1; then
+            # Run indexing with timeout (10 minutes) and capture all output
+            echo "   Command: node dist/index.js index --repo ${{ github.repository }} --branch ${BASE_BRANCH}"
+            echo "   Starting indexing..."
+            
+            INDEX_OUTPUT=$(timeout 600 node dist/index.js index --repo "${{ github.repository }}" --branch "${BASE_BRANCH}" 2>&1)
+            INDEX_EXIT_CODE=$?
+            
+            echo "   Exit code: ${INDEX_EXIT_CODE}"
+            echo "   Output (last 50 lines):"
+            echo "$INDEX_OUTPUT" | tail -50
+            
+            if [ $INDEX_EXIT_CODE -eq 0 ]; then
               # Check if index file was created
+              sleep 2  # Wait a bit for file system sync
+              
               if [ -f ".droog-embeddings.json" ]; then
                 FILE_SIZE=$(stat -f%z .droog-embeddings.json 2>/dev/null || stat -c%s .droog-embeddings.json 2>/dev/null || echo "0")
+                echo "   Index file found! Size: ${FILE_SIZE} bytes"
+                
                 if [ "$FILE_SIZE" -gt 100 ]; then
-                  echo "✅ Index file created successfully (size: ${FILE_SIZE} bytes)"
+                  echo "   ✅ Index file is valid (size > 100 bytes)"
                   INDEX_SUCCESS=true
                   break
                 else
-                  echo "⚠️  Index file too small (${FILE_SIZE} bytes), retrying..."
+                  echo "   ⚠️  Index file too small (${FILE_SIZE} bytes), will retry..."
                   rm -f .droog-embeddings.json
+                  LAST_ERROR="Index file too small"
                 fi
               else
-                echo "⚠️  Index file not created, retrying..."
+                echo "   ⚠️  Index file not found after indexing, will retry..."
+                LAST_ERROR="Index file not created"
               fi
             else
-              echo "⚠️  Indexing command failed, retrying..."
+              echo "   ⚠️  Indexing command failed (exit code: ${INDEX_EXIT_CODE})"
+              LAST_ERROR="Command failed with exit code ${INDEX_EXIT_CODE}"
+              echo "   Error output:"
+              echo "$INDEX_OUTPUT" | grep -i "error\|fail\|exception" | head -10 || echo "   (no specific error messages found)"
             fi
             
             if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-              echo "   Waiting 5 seconds before retry..."
-              sleep 5
+              echo "   Waiting 10 seconds before retry..."
+              sleep 10
             fi
           done
           
-          # Fallback: Create minimal index file if indexing failed
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "   📊 INDEXING SUMMARY"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          # FORCE CREATE: Ensure index file exists no matter what
           if [ "$INDEX_SUCCESS" = false ]; then
-            echo "⚠️  All indexing attempts failed, creating minimal index file..."
+            echo "   ⚠️  All indexing attempts failed"
+            echo "   Last error: ${LAST_ERROR}"
+            echo "   Creating minimal index file as fallback..."
+            
             TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-            echo "{\"version\":\"1.0\",\"repository\":\"${{ github.repository }}\",\"branch\":\"${BASE_BRANCH}\",\"timestamp\":\"${TIMESTAMP}\",\"embeddings\":[],\"metadata\":{\"note\":\"Minimal index created due to indexing failure\",\"files_indexed\":0,\"symbols_indexed\":0}}" > .droog-embeddings.json
-            echo "✅ Minimal index file created as fallback"
+            cat > .droog-embeddings.json << EOF
+{
+  "version": "1.0",
+  "repository": "${{ github.repository }}",
+  "branch": "${BASE_BRANCH}",
+  "timestamp": "${TIMESTAMP}",
+  "embeddings": [],
+  "metadata": {
+    "note": "Minimal index created due to indexing failure",
+    "error": "${LAST_ERROR}",
+    "files_indexed": 0,
+    "symbols_indexed": 0,
+    "retries_attempted": ${MAX_RETRIES}
+  }
+}
+EOF
+            echo "   ✅ Minimal index file created"
           fi
           
-          # Final verification - index file MUST exist
+          # FINAL VERIFICATION - Index file MUST exist
+          echo ""
+          echo "   🔍 Final verification..."
+          
           if [ -f ".droog-embeddings.json" ]; then
             FILE_SIZE=$(stat -f%z .droog-embeddings.json 2>/dev/null || stat -c%s .droog-embeddings.json 2>/dev/null || echo "0")
+            echo "   ✅ Index file exists: .droog-embeddings.json"
+            echo "   ✅ File size: ${FILE_SIZE} bytes"
+            echo "   ✅ File location: $(pwd)/.droog-embeddings.json"
             echo "index_exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Index file verified: .droog-embeddings.json (${FILE_SIZE} bytes)"
-            ls -lh .droog-embeddings.json
+            echo ""
+            echo "   File contents (first 200 chars):"
+            head -c 200 .droog-embeddings.json
+            echo ""
+            echo ""
           else
-            # Last resort: Create empty but valid JSON file
-            echo '{"embeddings":[],"metadata":{"note":"Empty index"}}' > .droog-embeddings.json
-            echo "index_exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Created empty index file as last resort"
+            echo "   ❌ CRITICAL: Index file still doesn't exist!"
+            echo "   Creating empty but valid JSON file as last resort..."
+            
+            # Force create directory if needed
+            mkdir -p "$(pwd)"
+            
+            # Create minimal valid JSON
+            echo '{"embeddings":[],"metadata":{"note":"Empty index - forced creation","timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}}' > .droog-embeddings.json
+            
+            if [ -f ".droog-embeddings.json" ]; then
+              echo "   ✅ Created empty index file successfully"
+              echo "index_exists=true" >> $GITHUB_OUTPUT
+            else
+              echo "   ❌ FAILED to create index file even with force creation!"
+              echo "   Current directory: $(pwd)"
+              echo "   Permissions:"
+              ls -ld .
+              exit 1
+            fi
           fi
-        continue-on-error: true
+          
+          echo "=========================================="
+          echo "✅ INDEXING STEP COMPLETE"
+          echo "=========================================="
+        continue-on-error: false
       
       # Step 8: Run DroogAI Review on calling repository
       - name: Run DroogAI Review

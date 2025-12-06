@@ -223,8 +223,11 @@ async function runEnterpriseReview(owner: string, repo: string, prNumber: number
     let indexExists = existsSync('.droog-embeddings.json');
     let useIndex = indexExists;
     
-    // Auto-index if index doesn't exist
-    if (!indexExists) {
+    // Check if we're in GitHub Actions (workflow already does indexing)
+    const isGitHubActions = process.env.GITHUB_ACTIONS === 'true';
+    
+    // Auto-index if index doesn't exist (only if NOT in GitHub Actions)
+    if (!indexExists && !isGitHubActions) {
       console.log('📦 No index found - auto-indexing base branch...\n');
       try {
         const baseBranch = prData.base.ref || 'main';
@@ -244,6 +247,11 @@ async function runEnterpriseReview(owner: string, repo: string, prNumber: number
         console.warn('   Continuing without index - cross-repo features disabled\n');
         useIndex = false;
       }
+    } else if (!indexExists && isGitHubActions) {
+      console.warn('⚠️  No index found in GitHub Actions workflow');
+      console.warn('   This should have been created by the indexing step.');
+      console.warn('   Continuing without index - cross-repo features disabled\n');
+      useIndex = false;
     }
     
     if (useIndex) {
