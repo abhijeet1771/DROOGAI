@@ -148,11 +148,16 @@ jobs:
           node dist/index.js review --repo "${{ github.repository }}" --pr "${PR_NUMBER}" --enterprise ${POST_FLAG} ${AUTO_FIX_FLAG} ${AUTO_APPLY_FLAG} || true
           
           # Copy report.json to calling repo root for artifact upload
+          # Note: report.json is created in .droog-ai directory (current working-directory)
           if [ -f "report.json" ]; then
             cp report.json "${{ github.workspace }}/report.json"
-            echo "✅ Review report generated"
+            echo "✅ Review report generated and copied to workspace root"
           else
-            echo "⚠️  report.json not found, creating minimal error report"
+            echo "⚠️  report.json not found in .droog-ai directory"
+            echo "Current directory: $(pwd)"
+            echo "Files in current directory:"
+            ls -la | head -10
+            echo "Creating minimal error report in workspace root"
             echo '{"success":false,"error":"Review failed to generate report","totalIssues":0,"issuesBySeverity":{"high":0,"medium":0,"low":0},"comments":[],"timestamp":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}' > "${{ github.workspace }}/report.json"
           fi
       
