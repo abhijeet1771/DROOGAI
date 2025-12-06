@@ -7,14 +7,6 @@ on:
         description: 'PR number to review'
         required: true
         type: string
-      gemini_api_key:
-        description: 'Gemini API key'
-        required: true
-        type: string
-      github_token:
-        description: 'GitHub token'
-        required: true
-        type: string
       post_comments:
         description: 'Post comments to PR'
         required: false
@@ -53,6 +45,22 @@ jobs:
           path: .droog-ai
           ref: master
       
+      # Step 1.5: Verify DroogAI checkout
+      - name: Verify DroogAI checkout
+        run: |
+          if [ ! -d ".droog-ai" ]; then
+            echo "❌ DroogAI directory not found after checkout"
+            exit 1
+          fi
+          if [ ! -f ".droog-ai/package.json" ]; then
+            echo "❌ package.json not found in DroogAI repository"
+            echo "Current directory: $(pwd)"
+            echo "Contents of .droog-ai:"
+            ls -la .droog-ai/ | head -20
+            exit 1
+          fi
+          echo "✅ DroogAI checkout verified - package.json found"
+      
       # Step 2: Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -66,11 +74,13 @@ jobs:
       - name: Install DroogAI dependencies
         working-directory: .droog-ai
         run: |
+          echo "📦 Installing DroogAI dependencies..."
           if [ -f "package-lock.json" ]; then
             npm ci
           else
             npm install
           fi
+          echo "✅ Dependencies installed successfully"
       
       # Step 4: Build DroogAI
       - name: Build DroogAI
