@@ -165,33 +165,21 @@ export class CommentPoster {
     let message = comment.message || '';
     let suggestion = comment.suggestion || '';
     
-    // Fix grammar and formatting in message
-    message = this.fixGrammarAndFormatting(message);
-    
-    // Extract impact information from message
-    const impactExplanation = this.extractImpactExplanation(message, comment);
-    
-    // Build human-like comment
-    let formatted = '';
-    
-    // 1. Impact explanation (what/where/why) - Let LLM's natural message be used
-    if (impactExplanation.callSites && impactExplanation.callSites.length > 0) {
-      formatted += `This change will break ${impactExplanation.callSites.length} call site(s):\n\n`;
-      impactExplanation.callSites.slice(0, 5).forEach((site: string) => {
-        formatted += `- ${site} will fail\n`;
-      });
-      if (impactExplanation.callSites.length > 5) {
-        formatted += `- ... and ${impactExplanation.callSites.length - 5} more location(s)\n`;
-      }
-      formatted += `\n`;
-    } else {
-      // Use LLM's original message directly (already conversational and natural)
-      formatted += `${this.fixGrammarAndFormatting(message)}\n\n`;
+    // Use LLM's message directly - only basic capitalization fix for first letter
+    if (message && message.length > 0) {
+      message = message.charAt(0).toUpperCase() + message.slice(1);
     }
     
-    // 2. Human suggestion (respectful, soft)
+    // Build comment - let LLM handle all formatting naturally
+    let formatted = '';
+    
+    // Use LLM's original message directly (no predefined prefixes)
+    if (message) {
+      formatted += `${message}\n\n`;
+    }
+    
+    // Add suggestion if available (clean imports but keep LLM's natural format)
     if (suggestion) {
-      formatted += `Here's how I'd approach this:\n\n`;
       // Clean suggestion: remove imports, extract only relevant code
       const cleanedSuggestion = this.cleanCodeSuggestion(suggestion, comment.line);
       formatted += `\`\`\`java\n${cleanedSuggestion}\n\`\`\`\n`;

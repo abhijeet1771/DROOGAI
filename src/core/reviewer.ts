@@ -30,6 +30,8 @@ import { RiskPrioritizer, RiskPrioritizationReport } from '../analysis/risk-prio
 import { PatternMemorySystem, PatternMemoryReport } from '../learning/pattern-memory.js';
 import { CodebaseKnowledgeEngine, CodebaseKnowledgeReport } from '../intelligence/codebase-knowledge.js';
 import { DependencyMapper, DependencyMap } from '../analysis/dependency-mapper.js';
+import { ReviewComment } from '../llm.js';
+import { CodeSymbol } from '../parser/types.js';
 
 export interface EnterpriseReviewReport {
   prNumber: number;
@@ -793,6 +795,16 @@ export class EnterpriseReviewer {
     }
     if (codebaseKnowledgeReport) {
       enterpriseReport.codebaseKnowledge = codebaseKnowledgeReport;
+      
+      // Convert reusable method suggestions to ReviewComments for inline posting
+      if (codebaseKnowledgeReport.reusableMethods.length > 0) {
+        const reusableMethodComments = this.convertReusableMethodsToComments(
+          codebaseKnowledgeReport.reusableMethods,
+          prSymbols
+        );
+        // Add to existing comments
+        enterpriseReport.comments.push(...reusableMethodComments);
+      }
     }
     if (dependencyMap) {
       enterpriseReport.dependencyMap = dependencyMap;
@@ -2127,6 +2139,59 @@ export class EnterpriseReviewer {
     return Math.min(callSiteScore + fileScore + severityMultiplier, 100);
   }
   
+  /**
+   * Convert reusable method suggestions to ReviewComments for inline posting
+   */
+  private convertReusableMethodsToComments(
+    reusableMethods: any[],
+    prSymbols: CodeSymbol[]
+  ): ReviewComment[] {
+    const comments: ReviewComment[] = [];
+    
+    // Create a map of method names to symbols for quick lookup
+    const symbolMap = new Map<string, CodeSymbol>();
+    prSymbols.forEach(symbol => {
+      if (symbol.type === 'method' || symbol.type === 'function') {
+        symbolMap.set(symbol.name, symbol);
+      }
+    });
+    
+    // Deduplicate by element+file
+    const seen = new Set<string>();
+    
+    reusableMethods.forEach((suggestion: any) => {
+      const key = `${suggestion.element}::${suggestion.file}`;
+      if (seen.has(key)) {
+        return; // Skip duplicates
+      }
+      seen.add(key);
+      
+      // Find the symbol to get line number
+      const symbol = symbolMap.get(suggestion.element);
+      const line = symbol?.startLine || 1; // Default to line 1 if not found
+      
+      // Build message
+      let message = suggestion.reason || suggestion.suggestion || `Consider reusing existing method \`${suggestion.element}\``;
+      if (suggestion.existingLocation) {
+        message += `\n\nExisting implementation: \`${suggestion.existingLocation}\``;
+      }
+      if (suggestion.similarity) {
+        message += `\nSimilarity: ${(suggestion.similarity * 100).toFixed(0)}%`;
+      }
+      
+      comments.push({
+        file: suggestion.file,
+        line: line,
+        severity: 'medium', // Reusable methods are medium priority
+        message: message,
+        suggestion: suggestion.suggestion || `Use existing method from ${suggestion.existingLocation}`,
+        confidence: suggestion.similarity || 0.7
+      });
+    });
+    
+    return comments;
+  }
+
   private generateRecommendations(report: EnterpriseReviewReport): string {
     const recommendations: string[] = [];
     
