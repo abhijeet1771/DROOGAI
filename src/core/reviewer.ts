@@ -1714,7 +1714,8 @@ export class EnterpriseReviewer {
           summary += `${index + 1}. **\`${fix.file}:${fix.line}\`** - ${fix.issue}\n`;
           summary += `   - **Confidence:** ${(fix.confidence * 100).toFixed(0)}%\n`;
           summary += `   - **Explanation:** ${fix.explanation}\n`;
-          summary += `   - **Fixed Code:**\n\`\`\`java\n${fix.fixedCode}\n\`\`\`\n\n`;
+          // Don't show fixed code in summary - it's already in inline comments
+          // summary += `   - **Fixed Code:**\n\`\`\`java\n${fix.fixedCode}\n\`\`\`\n\n`;
         });
       }
 
@@ -1724,7 +1725,8 @@ export class EnterpriseReviewer {
         summary += `${manualFixes.length} fix(es) generated but require manual review:\n\n`;
         manualFixes.slice(0, 3).forEach((fix: any, index: number) => {
           summary += `${index + 1}. **\`${fix.file}:${fix.line}\`** - ${fix.issue}\n`;
-          summary += `   - **Fixed Code:**\n\`\`\`java\n${fix.fixedCode}\n\`\`\`\n\n`;
+          // Don't show fixed code in summary - it's already in inline comments
+          // summary += `   - **Fixed Code:**\n\`\`\`java\n${fix.fixedCode}\n\`\`\`\n\n`;
         });
       }
     }

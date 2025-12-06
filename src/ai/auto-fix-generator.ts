@@ -75,10 +75,13 @@ export class AutoFixGenerator {
   ): Promise<AutoFixReport> {
     const fixes: AutoFix[] = [];
 
-    // Filter to high/medium severity issues that can potentially be auto-fixed
+    // Include ALL priorities (high, medium, low) - let user decide what to apply
     const fixableComments = comments.filter(c => {
       const sev = (c.severity || '').toLowerCase();
-      return (sev === 'high' || sev === 'medium') && c.suggestion && c.suggestion.length > 0;
+      // Include all severities: high, medium, low, critical, major, minor, nitpick
+      return (sev === 'high' || sev === 'medium' || sev === 'low' || 
+              sev === 'critical' || sev === 'major' || sev === 'minor' || sev === 'nitpick') 
+              && c.suggestion && c.suggestion.length > 0;
     });
 
     for (const comment of fixableComments.slice(0, 10)) { // Limit to 10 to avoid rate limits
