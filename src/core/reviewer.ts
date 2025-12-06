@@ -803,7 +803,8 @@ export class EnterpriseReviewer {
       if (codebaseKnowledgeReport.reusableMethods.length > 0) {
         const reusableMethodComments = this.convertReusableMethodsToComments(
           codebaseKnowledgeReport.reusableMethods,
-          prSymbols
+          prSymbols,
+          prData.files // Pass PR files to map line numbers correctly
         );
         // Add to existing comments
         enterpriseReport.comments.push(...reusableMethodComments);
@@ -1286,6 +1287,58 @@ export class EnterpriseReviewer {
     
     if (report.gherkinSuggestions && report.gherkinSuggestions.totalIssues > 10) {
       summary += `**Note:** ${report.gherkinSuggestions.totalIssues} Gherkin improvements suggested (see inline comments)\n\n`;
+    }
+    
+    // Remaining Comments (skipped due to spam prevention - shown in summary)
+    const skippedComments = (report as any).skippedComments || [];
+    if (skippedComments.length > 0) {
+      summary += `\n## 📋 Additional Issues (Not Posted as Inline Comments)\n\n`;
+      summary += `**Note:** ${skippedComments.length} additional issue(s) found but not posted as inline comments to avoid spam. These are shown below for your review:\n\n`;
+      
+      // Group by file for better readability
+      const byFile = new Map<string, typeof skippedComments>();
+      for (const comment of skippedComments) {
+        if (!byFile.has(comment.file)) {
+          byFile.set(comment.file, []);
+        }
+        byFile.get(comment.file)!.push(comment);
+      }
+      
+      // Sort by severity within each file
+      const severityOrder: Record<string, number> = { 'high': 1, 'critical': 1, 'medium': 2, 'major': 2, 'low': 3, 'minor': 3 };
+      
+      for (const [file, fileComments] of byFile) {
+        // Sort by priority
+        fileComments.sort((a: any, b: any) => {
+          const aSev = severityOrder[(a.severity || 'medium').toLowerCase()] || 2;
+          const bSev = severityOrder[(b.severity || 'medium').toLowerCase()] || 2;
+          return aSev - bSev;
+        });
+        
+        summary += `### 📄 File: \`${file}\`\n\n`;
+        
+        fileComments.forEach((comment: any, index: number) => {
+          const severity = (comment.severity || 'medium').toLowerCase();
+          const severityEmoji = severity === 'high' || severity === 'critical' ? '🔴' : severity === 'medium' || severity === 'major' ? '🟡' : '🟢';
+          const severityText = severity === 'high' || severity === 'critical' ? 'High Priority' : severity === 'medium' || severity === 'major' ? 'Medium Priority' : 'Low Priority';
+          
+          summary += `${index + 1}. ${severityEmoji} **Line ${comment.line}** - ${severityText}\n`;
+          summary += `   \n`;
+          summary += `   **What's the issue?**\n`;
+          summary += `   ${this.makeHumanReadable(comment.message || 'No description available')}\n`;
+          summary += `   \n`;
+          
+          if (comment.suggestion) {
+            const cleanedSuggestion = this.cleanCodeSuggestionForSummary(comment.suggestion || '');
+            summary += `   **How to fix it:**\n`;
+            summary += `   \`\`\`java\n${cleanedSuggestion}\n\`\`\`\n`;
+          }
+          summary += `\n`;
+        });
+      }
+      
+      summary += `\n---\n\n`;
+      summary += `💡 **Tip:** These issues were not posted as inline comments to keep the PR review focused. Review them here and address as needed.\n\n`;
     }
     
     // PR Flow Validation (NEW - Batch 1)
@@ -2093,6 +2146,67 @@ export class EnterpriseReviewer {
   }
 
   /**
+   * Convert technical message to human-readable, non-technical language
+   */
+  private makeHumanReadable(message: string): string {
+    if (!message || message.trim().length === 0) {
+      return 'No description available';
+    }
+    
+    let readable = message.trim();
+    
+    // Remove technical prefixes
+    readable = readable.replace(/^(Issue detected|Error found|Problem|Warning|Note):\s*/i, '');
+    readable = readable.replace(/^(I noticed|I'd recommend|Here's how):\s*/i, '');
+    
+    // Convert technical terms to simple language
+    readable = readable.replace(/NullPointerException/gi, 'null value error');
+    readable = readable.replace(/StackOverflowError/gi, 'infinite loop risk');
+    readable = readable.replace(/ArrayIndexOutOfBoundsException/gi, 'array index error');
+    readable = readable.replace(/SQL injection/gi, 'security vulnerability');
+    readable = readable.replace(/O\(n²\)/gi, 'slow performance');
+    readable = readable.replace(/O\(n\^2\)/gi, 'slow performance');
+    readable = readable.replace(/complexity/gi, 'complexity');
+    readable = readable.replace(/regression/gi, 'performance issue');
+    
+    // Make it more conversational
+    if (!readable.toLowerCase().startsWith('this') && !readable.toLowerCase().startsWith('the')) {
+      readable = `This ${readable.toLowerCase()}`;
+    }
+    
+    // Capitalize first letter
+    readable = readable.charAt(0).toUpperCase() + readable.slice(1);
+    
+    return readable;
+  }
+  
+  /**
+   * Clean code suggestion for summary display (remove imports, extract relevant code)
+   */
+  private cleanCodeSuggestionForSummary(suggestion: string): string {
+    if (!suggestion || suggestion.trim().length === 0) {
+      return '// No code suggestion available';
+    }
+    
+    let cleaned = suggestion.trim();
+    
+    // Remove import statements
+    cleaned = cleaned.replace(/^import\s+(?:static\s+)?[\w.*]+\s*;?\s*$/gm, '');
+    
+    // Remove empty lines at start
+    cleaned = cleaned.replace(/^\s*\n+/, '');
+    
+    // If suggestion is too long, truncate and add note
+    const lines = cleaned.split('\n');
+    if (lines.length > 20) {
+      cleaned = lines.slice(0, 20).join('\n');
+      cleaned += '\n// ... (code truncated for readability)';
+    }
+    
+    return cleaned.trim();
+  }
+
+  /**
    * Calculate merge risk level
    */
   private calculateMergeRisk(report: EnterpriseReviewReport): string {
@@ -2149,15 +2263,26 @@ export class EnterpriseReviewer {
    */
   private convertReusableMethodsToComments(
     reusableMethods: any[],
-    prSymbols: CodeSymbol[]
+    prSymbols: CodeSymbol[],
+    prFiles: Array<{ filename: string; patch?: string }>
   ): ReviewComment[] {
     const comments: ReviewComment[] = [];
     
-    // Create a map of method names to symbols for quick lookup
+    // Create a map of method names to symbols for quick lookup (by file + name)
     const symbolMap = new Map<string, CodeSymbol>();
     prSymbols.forEach(symbol => {
       if (symbol.type === 'method' || symbol.type === 'function') {
-        symbolMap.set(symbol.name, symbol);
+        // Use file::name as key to handle same method name in different files
+        const key = `${symbol.file}::${symbol.name}`;
+        symbolMap.set(key, symbol);
+      }
+    });
+    
+    // Create a map of file patches for line number mapping
+    const filePatches = new Map<string, string>();
+    prFiles.forEach(file => {
+      if (file.patch) {
+        filePatches.set(file.filename, file.patch);
       }
     });
     
@@ -2172,8 +2297,18 @@ export class EnterpriseReviewer {
       seen.add(key);
       
       // Find the symbol to get line number
-      const symbol = symbolMap.get(suggestion.element);
-      const line = symbol?.startLine || 1; // Default to line 1 if not found
+      const symbolKey = `${suggestion.file}::${suggestion.element}`;
+      const symbol = symbolMap.get(symbolKey);
+      
+      // Map line number from extracted code to actual PR diff line
+      let line = symbol?.startLine || 1;
+      if (symbol && filePatches.has(suggestion.file)) {
+        const patch = filePatches.get(suggestion.file)!;
+        const mappedLine = this.mapExtractedCodeLineToPRLine(patch, symbol.startLine || 1);
+        if (mappedLine) {
+          line = mappedLine;
+        }
+      }
       
       // Build message
       let message = suggestion.reason || suggestion.suggestion || `Consider reusing existing method \`${suggestion.element}\``;
@@ -2195,6 +2330,60 @@ export class EnterpriseReviewer {
     });
     
     return comments;
+  }
+  
+  /**
+   * Map line number from extracted code (from patch) to actual PR diff line number
+   */
+  private mapExtractedCodeLineToPRLine(patch: string, extractedLine: number): number | null {
+    if (!patch || extractedLine < 1) {
+      return null;
+    }
+    
+    const lines = patch.split('\n');
+    let extractedCodeLineCount = 0;
+    let prLineNumber = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Parse hunk header: @@ -oldStart,oldCount +newStart,newCount @@
+      if (line.startsWith('@@')) {
+        const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (match) {
+          prLineNumber = parseInt(match[2], 10) - 1; // -1 because we'll increment on next line
+        }
+        continue;
+      }
+      
+      // Skip deleted lines (they're not in extracted code)
+      if (line.startsWith('-')) {
+        continue;
+      }
+      
+      // Added lines (start with +) are in extracted code
+      if (line.startsWith('+')) {
+        extractedCodeLineCount++;
+        prLineNumber++;
+        if (extractedCodeLineCount === extractedLine) {
+          return prLineNumber;
+        }
+        continue;
+      }
+      
+      // Context lines (start with space) are also in extracted code
+      if (line.startsWith(' ')) {
+        extractedCodeLineCount++;
+        prLineNumber++;
+        if (extractedCodeLineCount === extractedLine) {
+          return prLineNumber;
+        }
+        continue;
+      }
+    }
+    
+    // If not found, return null (will use original line number)
+    return null;
   }
 
   private generateRecommendations(report: EnterpriseReviewReport): string {

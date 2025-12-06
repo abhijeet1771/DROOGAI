@@ -86,6 +86,11 @@ export class CodebaseKnowledgeEngine {
           continue;
         }
 
+        // CRITICAL FIX: Skip if same file - don't suggest reusing method from same file!
+        if (prSymbol.file === mainSymbol.file) {
+          continue;
+        }
+
         // Check if method names are similar
         const nameSimilarity = this.calculateNameSimilarity(prSymbol.name, mainSymbol.name);
         if (nameSimilarity > 0.7) {

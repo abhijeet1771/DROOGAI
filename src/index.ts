@@ -343,7 +343,14 @@ async function runEnterpriseReview(owner: string, repo: string, prNumber: number
 
     if (post) {
       const poster = new CommentPoster(github, owner, repo, prNumber, prData.head.sha);
-      await poster.postComments(report.comments);
+      const { posted, skipped } = await poster.postComments(report.comments);
+      
+      // Add skipped comments to report for summary
+      if (skipped.length > 0) {
+        (report as any).skippedComments = skipped;
+        // Regenerate summary with skipped comments (access private method via any cast)
+        report.summary = (reviewer as any).generateSummary(report);
+      }
       
       // Post auto-fixes as GitHub suggestions (shows "Apply suggestion" buttons)
       if (report.autoFixes && report.autoFixes.fixes.length > 0) {

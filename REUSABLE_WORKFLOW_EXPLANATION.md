@@ -257,3 +257,5 @@ In your repository, add these secrets:
 
 **Bottom line:** Instead of copying 30+ lines of installation code to every repository, just call the reusable workflow with 8 lines. It's simpler, faster, and more reliable.
 
+
+

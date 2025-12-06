@@ -23,32 +23,45 @@ export class CommentPoster {
     this.commitId = commitId;
   }
 
-  async postComments(comments: ReviewComment[]): Promise<void> {
+  async postComments(comments: ReviewComment[]): Promise<{ posted: ReviewComment[]; skipped: ReviewComment[] }> {
     if (comments.length === 0) {
       console.log('\n✓ No comments to post.');
-      return;
+      return { posted: [], skipped: [] };
     }
 
-    // Post ALL comments (high/medium/low) as inline comments
-    // Only spam prevention: max 20 comments per file
-    console.log(`\n📤 Posting ${comments.length} comment(s) to GitHub...\n`);
+    // Sort comments by priority: High > Medium > Low
+    const severityOrder: Record<string, number> = { 'high': 1, 'critical': 1, 'medium': 2, 'major': 2, 'low': 3, 'minor': 3, 'nitpick': 3 };
+    const sortedComments = [...comments].sort((a, b) => {
+      const aSev = severityOrder[(a.severity || 'medium').toLowerCase()] || 2;
+      const bSev = severityOrder[(b.severity || 'medium').toLowerCase()] || 2;
+      return aSev - bSev; // Lower number = higher priority
+    });
 
-    // Group comments by file to avoid spam
+    console.log(`\n📤 Posting ${sortedComments.length} comment(s) to GitHub (priority order: High → Medium → Low)...\n`);
+
+    // Group comments by file
     const commentsByFile = new Map<string, ReviewComment[]>();
-    for (const comment of comments) {
+    for (const comment of sortedComments) {
       if (!commentsByFile.has(comment.file)) {
         commentsByFile.set(comment.file, []);
       }
       commentsByFile.get(comment.file)!.push(comment);
     }
 
-    // Post ALL comments as inline comments (high/medium/low)
-    // Spam prevention: max 20 comments per file
+    const posted: ReviewComment[] = [];
+    const skipped: ReviewComment[] = [];
+
+    // Post comments priority-wise (max 20 per file)
     for (const [file, fileComments] of commentsByFile) {
       if (fileComments.length > 0) {
-        const commentsToPost = fileComments.slice(0, 20); // Limit to 20 per file to avoid spam
-        console.log(`  📌 Found ${fileComments.length} comment(s) for ${file} - posting ${commentsToPost.length} as inline comments...`);
+        // Already sorted by priority, so first 20 are highest priority
+        const commentsToPost = fileComments.slice(0, 20);
+        const commentsSkipped = fileComments.slice(20);
         
+        console.log(`  📌 File: ${file}`);
+        console.log(`     Total: ${fileComments.length} | Posting: ${commentsToPost.length} (priority order) | Skipped: ${commentsSkipped.length}`);
+        
+        // Post inline comments (priority order)
         for (const comment of commentsToPost) {
           try {
             const severity = (comment.severity || 'medium').toUpperCase();
@@ -63,6 +76,7 @@ export class CommentPoster {
               this.formatComment(comment)
             );
             console.log(`  ✓ Posted comment on ${comment.file}:${comment.line}`);
+            posted.push(comment);
             
             // Rate limit: 1 request per second
             await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -73,16 +87,27 @@ export class CommentPoster {
               console.error(`     Status: ${error.response.status}`);
               console.error(`     Response: ${JSON.stringify(error.response.data)}`);
             }
+            // Add failed comment to skipped list
+            skipped.push(comment);
           }
         }
         
-        if (fileComments.length > 20) {
-          console.log(`  ⚠️  ${fileComments.length - 20} more comment(s) skipped for ${file} (spam prevention limit)`);
+        // Add skipped comments to list
+        skipped.push(...commentsSkipped);
+        
+        if (commentsSkipped.length > 0) {
+          console.log(`  ⚠️  ${commentsSkipped.length} comment(s) skipped (will be shown in PR summary)`);
         }
       }
     }
 
-    console.log('\n✓ Finished posting comments.');
+    console.log(`\n✓ Posted ${posted.length} inline comment(s)`);
+    if (skipped.length > 0) {
+      console.log(`  ℹ️  ${skipped.length} comment(s) will be shown in PR Impact Assessment summary`);
+    }
+    console.log('✓ Finished posting comments.\n');
+
+    return { posted, skipped };
   }
 
   /**
