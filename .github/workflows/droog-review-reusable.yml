@@ -35,19 +35,26 @@ jobs:
       issues: write
     
     steps:
-      - name: Checkout code
+      # Step 1: Checkout DroogAI repository (to build it)
+      - name: Checkout DroogAI
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          repository: abhijeet1771/DROOGAI
+          path: .droog-ai
+          ref: master
       
+      # Step 2: Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: .droog-ai/package-lock.json
         continue-on-error: true
       
-      - name: Install dependencies
+      # Step 3: Install DroogAI dependencies
+      - name: Install DroogAI dependencies
+        working-directory: .droog-ai
         run: |
           if [ -f "package-lock.json" ]; then
             npm ci
@@ -55,21 +62,44 @@ jobs:
             npm install
           fi
       
-      - name: Build Droog AI
+      # Step 4: Build DroogAI
+      - name: Build DroogAI
+        working-directory: .droog-ai
         run: npm run build
       
+      # Step 5: Verify build
+      - name: Verify DroogAI build
+        working-directory: .droog-ai
+        run: |
+          if [ ! -f "dist/index.js" ]; then
+            echo "❌ DroogAI build failed - dist/index.js not found"
+            exit 1
+          fi
+          echo "✅ DroogAI built successfully"
+      
+      # Step 6: Checkout calling repository (the repo being reviewed)
+      - name: Checkout calling repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      # Step 7: Load index if exists (from calling repo)
       - name: Load index if exists
         id: load-index
         run: |
           if [ -f ".droog-embeddings.json" ]; then
             echo "index_exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Codebase index found"
           else
             echo "index_exists=false" >> $GITHUB_OUTPUT
+            echo "ℹ️  No codebase index found (will skip cross-repo duplicate detection)"
           fi
         continue-on-error: true
       
-      - name: Run Droog AI Review
+      # Step 8: Run DroogAI Review on calling repository
+      - name: Run DroogAI Review
         id: review
+        working-directory: .droog-ai
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,13 +110,18 @@ jobs:
             POST_FLAG="--post"
           fi
           
+          echo "🚀 Running DroogAI review on ${{ github.repository }} PR #${PR_NUMBER}"
+          
           # Run review with enterprise features enabled
           node dist/index.js review --repo "${{ github.repository }}" --pr "${PR_NUMBER}" --enterprise ${POST_FLAG} || true
           
-          # Ensure report.json exists (even if review failed)
-          if [ ! -f "report.json" ]; then
+          # Copy report.json to calling repo root for artifact upload
+          if [ -f "report.json" ]; then
+            cp report.json "${{ github.workspace }}/report.json"
+            echo "✅ Review report generated"
+          else
             echo "⚠️  report.json not found, creating minimal error report"
-            echo '{"success":false,"error":"Review failed to generate report","totalIssues":0,"issuesBySeverity":{"high":0,"medium":0,"low":0},"comments":[],"timestamp":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}' > report.json
+            echo '{"success":false,"error":"Review failed to generate report","totalIssues":0,"issuesBySeverity":{"high":0,"medium":0,"low":0},"comments":[],"timestamp":"'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"}' > "${{ github.workspace }}/report.json"
           fi
       
       - name: Upload review report
