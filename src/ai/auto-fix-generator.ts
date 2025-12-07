@@ -63,7 +63,7 @@ export class AutoFixGenerator {
   constructor(geminiKey: string) {
     this.geminiKey = geminiKey;
     const genAI = new GoogleGenerativeAI(geminiKey);
-    this.model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+    this.model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   }
 
   /**
