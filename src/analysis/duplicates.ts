@@ -38,6 +38,16 @@ export class DuplicateDetector {
     
     for (let i = 0; i < sourceSymbols.length; i++) {
       for (let j = i + 1; j < sourceSymbols.length; j++) {
+        // Skip if same file AND same method name AND same signature - don't compare exact same method within the same file
+        // But still compare:
+        //   - Different files (cross-file comparison is allowed)
+        //   - Same file but different signatures (method overloading - testLogin() vs testLogin(String param))
+        if (sourceSymbols[i].file === sourceSymbols[j].file && 
+            sourceSymbols[i].name === sourceSymbols[j].name &&
+            sourceSymbols[i].signature === sourceSymbols[j].signature) {
+          continue;
+        }
+        
         // Skip if different file types (e.g., .java vs .js vs .ps1)
         if (!this.isSameLanguage(sourceSymbols[i].file, sourceSymbols[j].file)) {
           continue;
