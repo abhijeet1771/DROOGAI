@@ -4,7 +4,7 @@
 
 The local `.env` file has been updated with the new Gemini API key:
 ```
-GEMINI_API_KEY=AIzaSyAUclJ8Eh2xEEf_-AdVoTUoWs_3GkJG8q0
+GEMINI_API_KEY=AIzaSy_YOUR_KEY_HERE
 ```
 
 **Note:** `.env` file is in `.gitignore`, so it won't be committed to git (this is correct for security).
@@ -22,7 +22,7 @@ For GitHub Actions workflows to use the new key, you need to update it in GitHub
 3. Click **Secrets and variables** → **Actions** (left sidebar)
 4. Find **GEMINI_API_KEY** secret
 5. Click **Update** (or create if it doesn't exist)
-6. Paste the new key: `AIzaSyAUclJ8Eh2xEEf_-AdVoTUoWs_3GkJG8q0`
+6. Paste the new key: `AIzaSy_YOUR_KEY_HERE`
 7. Click **Update secret**
 
 ### For DROOGAI Repository (if needed):
