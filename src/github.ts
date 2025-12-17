@@ -260,18 +260,23 @@ export class GitHubClient {
 
   /**
    * List all review comments (inline comments) on a PR
+   * Uses pagination to get ALL comments (not just first 30)
    */
-  async listReviewComments(owner: string, repo: string, prNumber: number): Promise<Array<{ id: number; body: string; path: string; line: number }>> {
+  async listReviewComments(owner: string, repo: string, prNumber: number): Promise<Array<{ id: number; path: string; line: number }>> {
     try {
-      const response = await this.octokit.rest.pulls.listReviewComments({
-        owner,
-        repo,
-        pull_number: prNumber,
-      });
+      // Use paginate to get ALL comments across all pages
+      const comments = await this.octokit.paginate(
+        this.octokit.rest.pulls.listReviewComments,
+        {
+          owner,
+          repo,
+          pull_number: prNumber,
+          per_page: 100, // Max per page (GitHub limit)
+        }
+      );
 
-      return response.data.map(comment => ({
+      return comments.map(comment => ({
         id: comment.id,
-        body: comment.body || '',
         path: comment.path || '',
         line: comment.line || 0,
       }));
@@ -302,16 +307,22 @@ export class GitHubClient {
 
   /**
    * List all issue comments (PR conversation comments) on a PR
+   * Uses pagination to get ALL comments (not just first 30)
    */
   async listIssueComments(owner: string, repo: string, prNumber: number): Promise<Array<{ id: number; body: string }>> {
     try {
-      const response = await this.octokit.rest.issues.listComments({
-        owner,
-        repo,
-        issue_number: prNumber,
-      });
+      // Use paginate to get ALL comments across all pages
+      const comments = await this.octokit.paginate(
+        this.octokit.rest.issues.listComments,
+        {
+          owner,
+          repo,
+          issue_number: prNumber,
+          per_page: 100, // Max per page (GitHub limit)
+        }
+      );
 
-      return response.data.map(comment => ({
+      return comments.map(comment => ({
         id: comment.id,
         body: comment.body || '',
       }));
@@ -342,6 +353,7 @@ export class GitHubClient {
 
   /**
    * Delete all comments on a PR (both review comments and issue comments)
+   * Optimized: Deletes in parallel batches for faster execution
    */
   async deleteAllPRComments(owner: string, repo: string, prNumber: number): Promise<{ reviewComments: number; issueComments: number }> {
     console.log(`\n🗑️  Deleting all comments on PR #${prNumber}...\n`);
@@ -354,43 +366,79 @@ export class GitHubClient {
     const issueComments = await this.listIssueComments(owner, repo, prNumber);
     console.log(`  Found ${issueComments.length} issue comment(s) (PR conversation comments)\n`);
 
+    if (reviewComments.length === 0 && issueComments.length === 0) {
+      console.log('  ✓ No comments to delete.\n');
+      return { reviewComments: 0, issueComments: 0 };
+    }
+
+    // Delete in parallel batches (10 at a time to respect rate limits)
+    const BATCH_SIZE = 10;
     let deletedReview = 0;
     let deletedIssue = 0;
     let failedReview = 0;
     let failedIssue = 0;
 
-    // Delete review comments
-    for (const comment of reviewComments) {
-      try {
-        await this.deleteReviewComment(owner, repo, comment.id);
-        deletedReview++;
-        console.log(`  ✓ Deleted review comment #${comment.id} (${comment.path}:${comment.line})`);
-        // Rate limit: 1 request per second
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      } catch (error: any) {
-        failedReview++;
-        console.error(`  ✗ Failed to delete review comment #${comment.id}: ${error.message}`);
+    // Delete review comments in batches
+    if (reviewComments.length > 0) {
+      console.log(`  🗑️  Deleting ${reviewComments.length} review comment(s)...`);
+      for (let i = 0; i < reviewComments.length; i += BATCH_SIZE) {
+        const batch = reviewComments.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map(comment => this.deleteReviewComment(owner, repo, comment.id))
+        );
+        
+        results.forEach((result, idx) => {
+          if (result.status === 'fulfilled') {
+            deletedReview++;
+            const comment = batch[idx];
+            console.log(`  ✓ Deleted review comment #${comment.id} (${comment.path}:${comment.line})`);
+          } else {
+            failedReview++;
+            const comment = batch[idx];
+            console.error(`  ✗ Failed to delete review comment #${comment.id}: ${result.reason?.message || 'Unknown error'}`);
+          }
+        });
+
+        // Small delay between batches to respect rate limits
+        if (i + BATCH_SIZE < reviewComments.length) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
       }
     }
 
-    // Delete issue comments
-    for (const comment of issueComments) {
-      try {
-        await this.deleteIssueComment(owner, repo, comment.id);
-        deletedIssue++;
-        console.log(`  ✓ Deleted issue comment #${comment.id}`);
-        // Rate limit: 1 request per second
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      } catch (error: any) {
-        failedIssue++;
-        console.error(`  ✗ Failed to delete issue comment #${comment.id}: ${error.message}`);
+    // Delete issue comments in batches
+    if (issueComments.length > 0) {
+      console.log(`\n  🗑️  Deleting ${issueComments.length} issue comment(s)...`);
+      for (let i = 0; i < issueComments.length; i += BATCH_SIZE) {
+        const batch = issueComments.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map(comment => this.deleteIssueComment(owner, repo, comment.id))
+        );
+        
+        results.forEach((result, idx) => {
+          if (result.status === 'fulfilled') {
+            deletedIssue++;
+            const comment = batch[idx];
+            console.log(`  ✓ Deleted issue comment #${comment.id}`);
+          } else {
+            failedIssue++;
+            const comment = batch[idx];
+            console.error(`  ✗ Failed to delete issue comment #${comment.id}: ${result.reason?.message || 'Unknown error'}`);
+          }
+        });
+
+        // Small delay between batches to respect rate limits
+        if (i + BATCH_SIZE < issueComments.length) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
       }
     }
 
-    console.log(`\n✓ Deleted ${deletedReview} review comment(s) and ${deletedIssue} issue comment(s)`);
+    console.log(`\n✅ Deleted ${deletedReview} review comment(s) and ${deletedIssue} issue comment(s)`);
     if (failedReview > 0 || failedIssue > 0) {
       console.log(`  ⚠️  Failed to delete ${failedReview} review comment(s) and ${failedIssue} issue comment(s)`);
     }
+    console.log('');
 
     return { reviewComments: deletedReview, issueComments: deletedIssue };
   }

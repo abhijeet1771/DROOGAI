@@ -15,12 +15,9 @@ dotenv.config();
 const program = new Command();
 
 // Check if using legacy format (--repo --pr without subcommand)
-// Valid subcommands that should use new format
-const validSubcommands = ['review', 'index', 'analyze', 'summarize', 'delete-comments', 'setup-github'];
-const hasSubcommand = process.argv.some(arg => validSubcommands.includes(arg));
 const isLegacyFormat = process.argv.some(arg => arg === '--repo') && 
                        process.argv.some(arg => arg === '--pr') &&
-                       !hasSubcommand;
+                       !process.argv[2]?.match(/^(review|index|analyze|summarize|delete-comments)$/);
 
 if (isLegacyFormat) {
   // Legacy format: --repo --pr (backward compatibility)
@@ -95,16 +92,6 @@ if (isLegacyFormat) {
     });
   
   program
-    .command('delete-comments')
-    .description('Delete all comments on a GitHub PR')
-    .requiredOption('--repo <owner/repo>', 'GitHub repository')
-    .requiredOption('--pr <number>', 'Pull request number')
-    .option('--token <token>', 'GitHub token')
-    .action(async (options) => {
-      await runDeleteComments(options);
-    });
-  
-  program
     .command('setup-github')
     .description('Setup GitHub Actions workflows for automatic PR review and index updates')
     .action(async () => {
@@ -115,6 +102,16 @@ if (isLegacyFormat) {
         console.error('❌ Failed to setup GitHub integration:', error.message);
         process.exit(1);
       }
+    });
+  
+  program
+    .command('delete-comments')
+    .description('Delete all comments on a GitHub PR')
+    .requiredOption('--repo <owner/repo>', 'GitHub repository')
+    .requiredOption('--pr <number>', 'Pull request number')
+    .option('--token <token>', 'GitHub token')
+    .action(async (options) => {
+      await runDeleteComments(options);
     });
   
   program.parse();
@@ -647,9 +644,18 @@ async function runSummarize(options: any) {
 async function runDeleteComments(options: any) {
   try {
     const [owner, repo] = options.repo.split('/');
+    if (!owner || !repo) {
+      console.error('❌ Invalid repo format. Use: owner/repo');
+      process.exit(1);
+    }
+
     const prNumber = parseInt(options.pr, 10);
+    if (isNaN(prNumber)) {
+      console.error('❌ Invalid PR number');
+      process.exit(1);
+    }
+
     const token = options.token || process.env.GITHUB_TOKEN;
-    
     if (!token) {
       console.error('❌ GitHub token required');
       console.error('   Set GITHUB_TOKEN environment variable or use --token option');
